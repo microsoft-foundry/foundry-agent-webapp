@@ -25,6 +25,11 @@
     },
     "aiFoundryResourceName": {
       "value": "${AI_FOUNDRY_RESOURCE_NAME}"
+    },
+    "tags": {
+      "value": {
+       
+      }
     }
   }
 }
