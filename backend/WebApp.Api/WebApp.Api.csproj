@@ -9,9 +9,9 @@
 
   <ItemGroup>
     <PackageReference Include="Azure.AI.Projects" Version="1.2.0-beta.1" />
-    <PackageReference Include="Azure.Identity" Version="1.17.0" />
+    <PackageReference Include="Azure.Identity" Version="1.17.1" />
     <PackageReference Include="Microsoft.Agents.AI.AzureAI" Version="1.0.0-preview.251016.1" />
-    <PackageReference Include="Microsoft.Identity.Web" Version="4.0.1" />
+    <PackageReference Include="Microsoft.Identity.Web" Version="4.1.1" />
   </ItemGroup>
 
   <ItemGroup>
