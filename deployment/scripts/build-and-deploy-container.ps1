@@ -83,10 +83,12 @@ if ($dockerAvailable) {
     
     Push-Location $projectRoot
     try {
+        $dockerfilePath = Join-Path "deployment" "docker" "frontend.Dockerfile"
         docker build `
+            --platform linux/amd64 `
             --build-arg ENTRA_SPA_CLIENT_ID=$ClientId `
             --build-arg ENTRA_TENANT_ID=$TenantId `
-            -f .\deployment\docker\frontend.Dockerfile `
+            -f $dockerfilePath `
             -t $imageName `
             . 2>&1 | Out-Host
 
@@ -129,6 +131,7 @@ if ($dockerAvailable) {
         $buildOutput = az acr build `
             --registry $AcrName `
             --image "ai-foundry-agent/web-dev:$imageTag" `
+            --platform linux/amd64 `
             --build-arg ENTRA_SPA_CLIENT_ID=$ClientId `
             --build-arg ENTRA_TENANT_ID=$TenantId `
             --file .\deployment\docker\frontend.Dockerfile `

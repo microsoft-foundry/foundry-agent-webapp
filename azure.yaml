@@ -1,15 +1,3 @@
-name: ai-foundry-agent
-metadata:
-  template: ai-foundry-agent@0.0.1
-  location: eastus2
-
-# Infra-only pattern - no services defined
-# Container image deployment handled by hooks
-
-infra:
-  path: ./infra
-  module: main
-
 hooks:
   # Phase 1: Create Entra app, generate config files
   preprovision:
@@ -17,12 +5,20 @@ hooks:
       shell: pwsh
       run: ./deployment/hooks/preprovision.ps1
       continueOnError: false
+    posix:
+      shell: pwsh
+      run: ./deployment/hooks/preprovision.ps1
+      continueOnError: false
 
   # Phase 2: Provision (automatic - Bicep templates with placeholder image)
-  
+
   # Phase 3: Build real image and deploy to Container App (runs after provision)
   postprovision:
     windows:
+      shell: pwsh
+      run: ./deployment/hooks/postprovision.ps1
+      continueOnError: false
+    posix:
       shell: pwsh
       run: ./deployment/hooks/postprovision.ps1
       continueOnError: false
@@ -30,6 +26,10 @@ hooks:
   # Cleanup Entra app and config files
   postdown:
     windows:
+      shell: pwsh
+      run: ./deployment/hooks/postdown.ps1
+      continueOnError: false
+    posix:
       shell: pwsh
       run: ./deployment/hooks/postdown.ps1
       continueOnError: false
