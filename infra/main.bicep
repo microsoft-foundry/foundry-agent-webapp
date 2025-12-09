@@ -31,18 +31,23 @@ param entraTenantId string = tenant().tenantId
 @description('Container image for web service (set by postprovision hook)')
 param webImageName string = 'mcr.microsoft.com/k8se/quickstart:latest'  // Placeholder during initial provision
 
+@description('Tags to apply to all resources')
+param tags object = {}
+
 var abbrs = loadJsonContent('./abbreviations.json')
 var resourceToken = toLower(uniqueString(subscription().id, environmentName, location))
-var tags = {
+var defaultTags = {
   'azd-env-name': environmentName
   'app-name': 'ai-foundry-agent'
 }
+
+var combinedTags = union(tags, defaultTags)
 
 // Create resource group
 resource rg 'Microsoft.Resources/resourceGroups@2021-04-01' = {
   name: '${abbrs.resourcesResourceGroups}${environmentName}'
   location: location
-  tags: tags
+  tags: combinedTags
 }
 
 // Deploy infrastructure (ACR + Container Apps Environment)
@@ -51,7 +56,7 @@ module infrastructure 'main-infrastructure.bicep' = {
   scope: rg
   params: {
     location: location
-    tags: tags
+    tags: combinedTags
     resourceToken: resourceToken
   }
 }
@@ -62,7 +67,7 @@ module app 'main-app.bicep' = {
   scope: rg
   params: {
     location: location
-    tags: tags
+    tags: combinedTags
     resourceToken: resourceToken
     containerAppsEnvironmentId: infrastructure.outputs.containerAppsEnvironmentId
     containerRegistryName: infrastructure.outputs.containerRegistryName
