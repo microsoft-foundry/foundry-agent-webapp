@@ -1,171 +1,218 @@
-# AI Agent Web App
+# Mazhar AI Web App
 
-AI-powered web application with Entra ID authentication and Azure AI Foundry Agent Service integration. Deploy to Azure Container Apps with a single command.
+A simple, clean AI chat interface. No enterprise patterns. No microservices. Just Node.js + React + OpenAI.
 
-## Quick Start
+## What This Is
 
-```powershell
-azd up  # Full deployment: ~10-12 minutes
-```
+A straightforward web app where you type messages and get AI responses. That's it.
 
-This command:
-1. Creates Microsoft Entra ID app registration (automated)
-2. Deploys Azure infrastructure (ACR, Container Apps)
-3. Builds and deploys your application
-4. Opens browser to your deployed app
-
-**Local Development**: http://localhost:5173 (frontend), http://localhost:8080 (backend)  
-**Production**: https://<your-app>.azurecontainerapps.io
+**Stack:**
+- Backend: Node.js + Express
+- Frontend: React + Vite
+- AI: OpenAI API (gpt-4o-mini)
+- Deploy: Azure App Service (Free tier)
 
 ## Prerequisites
 
-- **Azure Subscription** with Contributor role
-- **PowerShell 7+** - Cross-platform scripting (https://aka.ms/powershell)
-- **Azure Developer CLI (azd)** - `winget install microsoft.azd`
-- **Bicep CLI** - Installed automatically with `azd`, or manually: `az bicep install`
-- **.NET 9 SDK** - https://dot.net
 - **Node.js 18+** - https://nodejs.org
-- **Azure AI Foundry Resource** - Create at https://ai.azure.com with at least one agent
-- **Docker Desktop** (optional) - For local builds. If not installed, `azd` uses Azure Container Registry cloud build.
+- **OpenAI API Key** - https://platform.openai.com/api-keys
+- **Azure Account** (for deployment) - https://azure.microsoft.com/free
 
-### Custom npm Registries
+That's it. No PowerShell. No Docker. No .NET. No azd.
 
-If your organization uses a custom npm registry, add `.npmrc` to `frontend/` directory:
+## Local Development
 
-```ini
-registry=https://your-registry.example.com/
-//your-registry.example.com/:_authToken=${NPM_TOKEN}
+### 1. Set up the backend
+
+```bash
+cd server
+npm install
+cp .env.example .env
 ```
 
-**Note**: `.npmrc` is automatically copied during Docker builds. Don't commit authentication tokens.
-
-### Organization-Specific Requirements
-
-If your organization has custom Entra ID policies, you may need to set environment variables before deployment. See [deployment/hooks/README.md](deployment/hooks/README.md#app-registration-policies) for details.
-
-## VS Code Configuration
-
-The workspace includes optimized VS Code configuration for AI-assisted development:
-
-### Tasks (`.vscode/tasks.json`)
-- **Start Local Development** - Runs both frontend and backend servers simultaneously
-- **Start Backend (ASP.NET Core)** - `dotnet run` with watch mode (port 8080)
-- **Start Frontend (Vite)** - `npm run dev` with HMR (port 5173)
-
-### Settings (`.vscode/settings.json`)
-- **GitHub Copilot** - Enabled with custom agent mode support
-- **Instruction Files** - Loads `.github/instructions/*.md` and `AGENTS.md` hierarchy
-- **Markdown Linting** - Disabled to prevent noise from instruction files
-
-## Configuration
-
-### Azure AI Foundry
-
-`azd up` automatically discovers your AI Foundry resource, project, and agent:
-
-- **1 resource found**: Auto-selects and configures RBAC
-- **Multiple resources found**: Prompts you to select which one to use
-- **RBAC**: Automatically grants the Container App's managed identity "Cognitive Services User" role
-
-**Change AI Foundry resource**:
-```powershell
-# Option 1: Let azd discover and prompt for selection
-azd provision  # Re-runs discovery, updates RBAC
-
-# Option 2: Manually configure then provision
-azd env set AI_FOUNDRY_RESOURCE_GROUP <resource-group>
-azd env set AI_FOUNDRY_RESOURCE_NAME <resource-name>
-azd provision  # Updates RBAC for new resource
+Edit `.env` and add your OpenAI API key:
+```
+OPENAI_API_KEY=sk-your-key-here
+PORT=3000
+NODE_ENV=development
 ```
 
-**List and switch agents** (requires prior `azd up`):
-```powershell
-# List all agents in configured project
-.\deployment\scripts\list-agents.ps1
+### 2. Set up the frontend
 
-# Switch to different agent (in same resource)
-azd env set AI_AGENT_ID <agent-name>
-# No provision needed - RBAC already grants access to all agents in the resource
+```bash
+cd ../client
+npm install
 ```
 
-> 💡 `azd provision` (or `azd up`) automatically regenerates `.env` files and updates RBAC assignments when configuration changes.
+### 3. Run both (use two terminals)
 
-## Development Workflow
-
-```powershell
-# Start local development (first time or daily)
-.\deployment\scripts\start-local-dev.ps1
-
-# Work with instant feedback:
-# - React: Hot Module Replacement (HMR)
-# - C#: Watch mode recompilation
-# - Test at http://localhost:5173
-
-# Deploy code changes to Azure
-.\deployment\scripts\deploy.ps1  # 3-5 minutes
+Terminal 1 (backend):
+```bash
+cd server
+npm run dev
 ```
 
-## Architecture
+Terminal 2 (frontend):
+```bash
+cd client
+npm run dev
+```
 
-**Frontend**: React 18 + TypeScript + Vite  
-**Backend**: ASP.NET Core 9 Minimal APIs  
-**Authentication**: Microsoft Entra ID (PKCE flow)  
-**AI Integration**: Azure AI Foundry Agent Service  
-**Deployment**: Single container, Azure Container Apps  
-**Local Dev**: Native (no Docker required)
+Open http://localhost:5173
 
+## Deploy to Azure App Service (Free Tier)
 
+### Option 1: Via Azure Portal (Easiest)
 
-## Commands
+1. **Create App Service**
+   - Go to https://portal.azure.com
+   - Click "Create a resource" → "Web App"
+   - Fill in:
+     - Name: `mazhar-ai-webapp` (or whatever you want)
+     - Runtime: **Node 18 LTS**
+     - Operating System: **Linux**
+     - Region: Pick one close to you
+     - Pricing: **Free F1**
+   - Click "Review + Create"
 
-**See `.github/copilot-instructions.md` for complete command reference and development workflow.**
+2. **Build the frontend**
+   ```bash
+   cd client
+   npm run build
+   ```
 
-| Command | Purpose | Duration |
-|---------|---------|----------|
-| `azd up` | Initial deployment (infra + code) | 10-12 min |
-| `.\deployment\scripts\deploy.ps1` | Deploy code changes only | 3-5 min |
-| `.\deployment\scripts\start-local-dev.ps1` | Start local development | Instant |
-| `.\deployment\scripts\list-agents.ps1` | List agents in your project | Instant |
-| `azd provision` | Re-deploy infrastructure / update RBAC | 2-3 min |
-| `azd down --force --purge` | Delete all Azure resources | 2-3 min |
+3. **Prepare for deployment**
+   ```bash
+   # Copy built frontend into server's public directory
+   cp -r client/dist server/public
+   ```
 
-> **Why not `azd deploy`?** This template uses an infra-only pattern. The `postprovision` hook handles initial builds, and `deploy.ps1` handles code updates to avoid redundant operations.
+4. **Configure Deployment**
+   - In Azure Portal, go to your App Service
+   - Click "Deployment Center" → "GitHub" (or "Local Git")
+   - Connect your repo: `Mazmansoor/mazhar-ai-webapp`
+   - Branch: `claude/nodejs-azure-rebuild-eYJFf`
+   - Build: **App Service build service**
+   - Set startup command: `cd server && npm install && npm start`
 
-## Documentation
+5. **Add Environment Variables**
+   - In App Service, go to "Configuration" → "Application settings"
+   - Add:
+     - `OPENAI_API_KEY` = your-key-here
+     - `NODE_ENV` = production
+     - `PORT` = 8080 (Azure default)
 
-For contributors and AI agents, detailed technical documentation is available:
-- `.github/copilot-instructions.md` - Architecture overview and cross-cutting patterns
-- `backend/AGENTS.md` - ASP.NET Core implementation patterns
-- `frontend/AGENTS.md` - React and MSAL integration patterns
-- `infra/AGENTS.md` - Bicep infrastructure patterns
-- `deployment/AGENTS.md` - Deployment and Docker patterns
+6. **Deploy**
+   - Push to your branch and Azure will auto-deploy
+   - Or use "Deployment Center" → "Sync" to trigger manual deploy
 
-## Azure Resources Provisioned
+### Option 2: Via Azure CLI
 
-This template deploys the following Azure resources:
+```bash
+# Login
+az login
 
-- **Azure Container Apps** - Serverless container hosting (0.5 vCPU, 1GB RAM, scale-to-zero enabled)
-- **Azure Container Registry** - Private container image storage (Basic tier)
-- **Log Analytics Workspace** - Application logging and monitoring
-- **Managed Identity** - System-assigned identity with RBAC to AI Foundry resource
+# Create resource group
+az group create --name mazhar-ai-rg --location eastus
 
-**Local development requires no Azure resources** - runs natively without Docker or cloud dependencies.
+# Create App Service plan (Free tier)
+az appservice plan create \
+  --name mazhar-ai-plan \
+  --resource-group mazhar-ai-rg \
+  --sku F1 \
+  --is-linux
 
+# Create web app
+az webapp create \
+  --name mazhar-ai-webapp \
+  --resource-group mazhar-ai-rg \
+  --plan mazhar-ai-plan \
+  --runtime "NODE:18-lts"
 
+# Configure app settings
+az webapp config appsettings set \
+  --name mazhar-ai-webapp \
+  --resource-group mazhar-ai-rg \
+  --settings \
+    OPENAI_API_KEY="your-key-here" \
+    NODE_ENV="production" \
+    PORT="8080"
 
+# Set startup command
+az webapp config set \
+  --name mazhar-ai-webapp \
+  --resource-group mazhar-ai-rg \
+  --startup-file "cd server && npm install && npm start"
 
+# Deploy from GitHub
+az webapp deployment source config \
+  --name mazhar-ai-webapp \
+  --resource-group mazhar-ai-rg \
+  --repo-url https://github.com/Mazmansoor/mazhar-ai-webapp \
+  --branch claude/nodejs-azure-rebuild-eYJFf \
+  --manual-integration
+```
+
+Your app will be at: `https://mazhar-ai-webapp.azurewebsites.net`
 
 ## Project Structure
 
 ```
-├── backend/WebApp.Api/          # ASP.NET Core API + serves frontend
-├── frontend/                     # React + TypeScript + Vite
-├── infra/                        # Bicep infrastructure templates
-├── deployment/
-│   ├── hooks/                    # azd lifecycle automation
-│   ├── scripts/                  # User commands
-│   └── docker/                   # Multi-stage Dockerfile
-└── .github/
-    ├── copilot-instructions.md   # Architecture patterns
-    └── instructions/             # Language-specific standards
+mazhar-ai-webapp/
+├── server/              # Node.js backend
+│   ├── index.js         # Express server
+│   ├── package.json
+│   └── .env.example
+├── client/              # React frontend
+│   ├── src/
+│   │   ├── App.jsx      # Main UI
+│   │   ├── App.css      # Styles
+│   │   └── main.jsx     # Entry point
+│   ├── index.html
+│   ├── vite.config.js
+│   └── package.json
+├── .gitignore
+└── README.md
 ```
+
+## How It Works
+
+1. User types message in React UI
+2. React sends `POST /api/chat` with `{message: "..."}`
+3. Express server calls OpenAI API
+4. Server returns `{reply: "..."}`
+5. React displays response
+
+No databases. No auth. No sessions. No websockets. Just HTTP and state in React.
+
+## Later (Not Today)
+
+Once this works and you have mental peace:
+- Add Azure OpenAI instead of OpenAI API
+- Add authentication (MSAL)
+- Add conversation history (database)
+- Add streaming responses
+- Add multi-agent patterns
+
+But not yet. First, get this boring version working.
+
+## Troubleshooting
+
+**"Cannot find module 'express'"**
+- Run `npm install` in the server directory
+
+**"API key not configured"**
+- Make sure `.env` file exists in server directory
+- Make sure `OPENAI_API_KEY` is set
+
+**Frontend can't reach backend locally**
+- Backend should be on port 3000
+- Vite proxy is configured to forward `/api/*` to `http://localhost:3000`
+
+**Azure deployment fails**
+- Check Application Insights / Log stream in Azure Portal
+- Common issue: forgot to set `OPENAI_API_KEY` in App Service configuration
+
+## License
+
+Do whatever you want with this. It's too simple to license.

@@ -1,0 +1,18 @@
+{
+  "name": "mazhar-ai-server",
+  "version": "1.0.0",
+  "description": "Simple Express backend for Mazhar AI",
+  "main": "index.js",
+  "scripts": {
+    "start": "node index.js",
+    "dev": "node --watch index.js"
+  },
+  "keywords": ["express", "openai", "api"],
+  "author": "",
+  "license": "MIT",
+  "dependencies": {
+    "express": "^4.18.2",
+    "dotenv": "^16.3.1",
+    "cors": "^2.8.5"
+  }
+}
