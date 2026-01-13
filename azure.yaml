@@ -13,23 +13,20 @@ infra:
 hooks:
   # Phase 1: Create Entra app, generate config files
   preprovision:
-    windows:
-      shell: pwsh
-      run: ./deployment/hooks/preprovision.ps1
-      continueOnError: false
+    shell: pwsh
+    run: ./deployment/hooks/preprovision.ps1
+    continueOnError: false
 
   # Phase 2: Provision (automatic - Bicep templates with placeholder image)
   
   # Phase 3: Build real image and deploy to Container App (runs after provision)
   postprovision:
-    windows:
-      shell: pwsh
-      run: ./deployment/hooks/postprovision.ps1
-      continueOnError: false
+    shell: pwsh
+    run: ./deployment/hooks/postprovision.ps1
+    continueOnError: false
 
   # Cleanup Entra app and config files
   postdown:
-    windows:
-      shell: pwsh
-      run: ./deployment/hooks/postdown.ps1
-      continueOnError: false
+    shell: pwsh
+    run: ./deployment/hooks/postdown.ps1
+    continueOnError: false

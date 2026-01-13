@@ -66,6 +66,61 @@ Write-Host ""
 Write-Host "Creating app registration with localhost redirect URIs..." -ForegroundColor Cyan
 Write-Host "(Production URL will be added after infrastructure deployment)" -ForegroundColor Gray
 
+function Select-Index {
+    param(
+        [Parameter(Mandatory = $true)]
+        [object[]]$Items,
+        [Parameter(Mandatory = $true)]
+        [string]$Title,
+        [Parameter(Mandatory = $true)]
+        [scriptblock]$GetLabel
+    )
+
+    # Prefer PromptForChoice because it works in more hosts (including VS Code)
+    # than relying on stdin being a true console/TTY.
+    try {
+        if ($Host -and $Host.UI -and $Host.UI.PromptForChoice) {
+            $choices = @()
+            for ($i = 0; $i -lt $Items.Count; $i++) {
+                $label = & $GetLabel $Items[$i] $i
+                # Use numeric accelerators when possible.
+                $hotKey = if ($i -lt 9) { "&$($i + 1)" } else { "&$($i + 1)" }
+                $choices += New-Object System.Management.Automation.Host.ChoiceDescription("$hotKey $label")
+            }
+
+            $caption = $Title
+            $message = "Select an option:" 
+            $defaultChoice = 0
+            $selected = $Host.UI.PromptForChoice($caption, $message, $choices, $defaultChoice)
+            if ($selected -ge 0 -and $selected -lt $Items.Count) {
+                return $selected
+            }
+        }
+    } catch {
+        # fall back to Read-Host below
+    }
+
+    # Fall back to Read-Host if available.
+    try {
+        Write-Host "" 
+        for ($i = 0; $i -lt $Items.Count; $i++) {
+            $label = & $GetLabel $Items[$i] $i
+            Write-Host "  [$($i+1)] $label" -ForegroundColor White
+        }
+        Write-Host "" 
+
+        $selection = Read-Host "Please select (1-$($Items.Count))"
+        $selectionNum = 0
+        if ([int]::TryParse($selection, [ref]$selectionNum) -and $selectionNum -ge 1 -and $selectionNum -le $Items.Count) {
+            return ($selectionNum - 1)
+        }
+    } catch {
+        # ignore
+    }
+
+    return -1
+}
+
 try {
     # Optional: Service Management Reference for organizations with custom app registration policies
     # Can be set via environment variable if your organization requires it
@@ -185,28 +240,53 @@ For more information, visit: https://learn.microsoft.com/azure/ai-foundry
             $selectedResource = $aiFoundryResources[0]
             Write-Host "[OK] Found 1 AI Foundry resource: $($selectedResource.name)" -ForegroundColor Green
         } else {
-            # Multiple resources found - prompt user to select
-            Write-Host "Found $($aiFoundryResources.Count) AI Foundry resources:" -ForegroundColor Cyan
-            Write-Host ""
-            for ($i = 0; $i -lt $aiFoundryResources.Count; $i++) {
-                $res = $aiFoundryResources[$i]
-                Write-Host "  [$($i+1)] $($res.name)" -ForegroundColor White
-                Write-Host "      Resource Group: $($res.resourceGroup)" -ForegroundColor Gray
-                Write-Host "      Location: $($res.location)" -ForegroundColor Gray
+            # Multiple resources found - try configured selection first, otherwise prompt (interactive) or fail (non-interactive).
+            $selectedResource = $null
+
+            $configuredResourceName = if ($existingResourceName) { $existingResourceName.ToString().Trim() } else { $null }
+            $configuredResourceGroup = if ($existingResourceGroup) { $existingResourceGroup.ToString().Trim() } else { $null }
+
+            if (-not [string]::IsNullOrWhiteSpace($configuredResourceName)) {
+                $matched = @($aiFoundryResources | Where-Object { $_.name -eq $configuredResourceName })
+                if ($matched.Count -ge 1) {
+                    $selectedResource = $matched[0]
+                    Write-Host "[OK] Using configured AI Foundry resource name: $($selectedResource.name)" -ForegroundColor Green
+                } else {
+                    Write-Host "[!]  Configured AI_FOUNDRY_RESOURCE_NAME '$configuredResourceName' not found in current subscription." -ForegroundColor Yellow
+                }
             }
-            Write-Host ""
-            Write-Host "Please select which resource to use (1-$($aiFoundryResources.Count)):" -ForegroundColor Yellow -NoNewline
-            $selection = Read-Host " "
-            
-            # Validate selection
-            $selectionNum = 0
-            if (-not [int]::TryParse($selection, [ref]$selectionNum) -or $selectionNum -lt 1 -or $selectionNum -gt $aiFoundryResources.Count) {
-                Write-Error "Invalid selection. Please run 'azd up' again and select a number between 1 and $($aiFoundryResources.Count)"
-                exit 1
+
+            if (-not $selectedResource -and -not [string]::IsNullOrWhiteSpace($configuredResourceGroup)) {
+                $matched = @($aiFoundryResources | Where-Object { $_.resourceGroup -eq $configuredResourceGroup })
+                if ($matched.Count -eq 1) {
+                    $selectedResource = $matched[0]
+                    Write-Host "[OK] Using configured AI Foundry resource group: $($selectedResource.resourceGroup)" -ForegroundColor Green
+                } elseif ($matched.Count -gt 1) {
+                    Write-Host "[!]  Multiple AI Foundry resources exist in resource group '$configuredResourceGroup'." -ForegroundColor Yellow
+                } else {
+                    Write-Host "[!]  Configured AI_FOUNDRY_RESOURCE_GROUP '$configuredResourceGroup' not found in current subscription." -ForegroundColor Yellow
+                }
             }
-            
-            $selectedResource = $aiFoundryResources[$selectionNum - 1]
-            Write-Host "[OK] Selected: $($selectedResource.name)" -ForegroundColor Green
+
+            if (-not $selectedResource) {
+                Write-Host "Found $($aiFoundryResources.Count) AI Foundry resources." -ForegroundColor Cyan
+
+                $selectedIndex = Select-Index -Items $aiFoundryResources -Title "Azure AI Foundry resource selection" -GetLabel { param($res, $i) "$($res.name)  (RG: $($res.resourceGroup), Location: $($res.location))" }
+
+                if ($selectedIndex -lt 0) {
+                    # Truly non-interactive host: fall back to deterministic selection to avoid failing `azd up`.
+                    Write-Host "" 
+                    Write-Host "[!]  Unable to prompt for selection (non-interactive host)." -ForegroundColor Yellow
+                    Write-Host "   Falling back to the first resource. To override, set:" -ForegroundColor Gray
+                    Write-Host "     azd env set AI_FOUNDRY_RESOURCE_NAME <resource-name>" -ForegroundColor Gray
+                    Write-Host "     # (optional) azd env set AI_FOUNDRY_RESOURCE_GROUP <resource-group>" -ForegroundColor Gray
+                    $selectedResource = $aiFoundryResources[0]
+                } else {
+                    $selectedResource = $aiFoundryResources[$selectedIndex]
+                }
+
+                Write-Host "[OK] Selected: $($selectedResource.name)" -ForegroundColor Green
+            }
         }
         
         # Get projects for the selected resource
