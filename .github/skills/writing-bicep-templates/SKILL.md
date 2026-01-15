@@ -157,3 +157,9 @@ resource containerApp 'Microsoft.App/containerApps@2023-05-01' = {
 output fqdn string = containerApp.properties.configuration.ingress.fqdn
 output identityPrincipalId string = containerApp.identity.principalId
 ```
+
+## Related Skills
+
+- **deploying-to-azure** - Deployment commands and hook workflow
+- **writing-csharp-code** - Backend configuration for Container Apps
+- **troubleshooting-authentication** - RBAC and managed identity debugging

@@ -137,3 +137,9 @@ Use available Playwright browser automation tools in order of preference:
 2. **Network requests** - Verify API calls and responses
 3. **Custom code execution** - Run Playwright scripts for complex scenarios
 4. **Screenshots** - Visual verification (use sparingly, high token cost)
+
+## Related Skills
+
+- **validating-ui-features** - Detailed test procedures for specific features
+- **writing-typescript-code** - Frontend patterns and state management
+- **implementing-chat-streaming** - SSE flow verification

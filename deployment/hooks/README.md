@@ -79,7 +79,7 @@ azd up
 | Preprovision fails | Verify Azure CLI auth: `az account show` |
 | Predeploy Docker build fails | Check Docker running: `docker version` (falls back to ACR cloud build) |
 | AI Foundry not found | Create resource at https://ai.azure.com |
-| Multiple AI Foundry resources | Hook will prompt for selection |
+| Multiple AI Foundry resources | Set `AI_FOUNDRY_RESOURCE_NAME` or select when prompted |
 | RBAC assignment fails | Verify you have User Access Administrator role on AI Foundry resource |
 
 ### App Registration Policies
@@ -99,6 +99,15 @@ azd up
 ```
 
 Contact your Entra ID admin for the required GUID.
+
+### Multiple AI Foundry Resources
+
+If you have multiple AI Foundry resources in your subscription, the preprovision hook will prompt you to select one. 
+
+**To skip the prompt**, pre-configure your preferred resource:
+```bash
+azd env set AI_FOUNDRY_RESOURCE_NAME "your-ai-foundry-resource-name"
+```
 
 ## Customization
 

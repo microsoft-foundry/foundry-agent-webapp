@@ -192,3 +192,9 @@ ENV ASPNETCORE_URLS=http://+:8080
 ENV ASPNETCORE_ENVIRONMENT=Production
 ENTRYPOINT ["dotnet", "WebApp.Api.dll"]
 ```
+
+## Related Skills
+
+- **writing-csharp-code** - Backend coding patterns for Container App configuration
+- **writing-bicep-templates** - Infrastructure templates for Azure resources
+- **troubleshooting-authentication** - Entra ID and RBAC debugging

@@ -63,8 +63,7 @@ Write-Host "Discovering AI Foundry resources..." -ForegroundColor Cyan
 $existingEndpoint = (azd env get-value AI_AGENT_ENDPOINT 2>&1) | Where-Object { $_ -notmatch 'ERROR' } | Select-Object -First 1
 
 if ([string]::IsNullOrWhiteSpace($existingEndpoint)) {
-    # Check for pre-configured resource selection (for non-interactive mode)
-    $presetResourceName = (azd env get-value AI_FOUNDRY_RESOURCE_NAME 2>&1) | Where-Object { $_ -notmatch 'ERROR' } | Select-Object -First 1
+    $configuredResourceName = (azd env get-value AI_FOUNDRY_RESOURCE_NAME 2>&1) | Where-Object { $_ -notmatch 'ERROR' } | Select-Object -First 1
     
     # Auto-discover
     $resources = az cognitiveservices account list --query "[?kind=='AIServices']" | ConvertFrom-Json
@@ -73,36 +72,54 @@ if ([string]::IsNullOrWhiteSpace($existingEndpoint)) {
         exit 1
     }
     
-    $selected = $resources[0]
+    $selected = $null
     
-    # If preset resource name, find it
-    if (-not [string]::IsNullOrWhiteSpace($presetResourceName)) {
-        $match = $resources | Where-Object { $_.name -eq $presetResourceName }
-        if ($match) {
-            $selected = $match
-            Write-Host "[OK] Using pre-configured resource: $presetResourceName" -ForegroundColor Green
-        } else {
-            Write-Host "[WARN] Configured resource '$presetResourceName' not found, using first available" -ForegroundColor Yellow
-        }
-    } elseif ($resources.Count -gt 1) {
-        Write-Host "Found $($resources.Count) AI Foundry resources:" -ForegroundColor Cyan
-        for ($i = 0; $i -lt $resources.Count; $i++) {
-            Write-Host "  [$($i+1)] $($resources[$i].name) ($($resources[$i].resourceGroup))" -ForegroundColor White
+    if ($resources.Count -eq 1) {
+        # Single resource - use it directly
+        $selected = $resources[0]
+        Write-Host "[OK] Found 1 AI Foundry resource: $($selected.name)" -ForegroundColor Green
+    } else {
+        # Multiple resources - use configured name or fallback to first
+        if (-not [string]::IsNullOrWhiteSpace($configuredResourceName)) {
+            $matched = @($resources | Where-Object { $_.name -eq $configuredResourceName.Trim() })
+            if ($matched.Count -ge 1) {
+                $selected = $matched[0]
+                Write-Host "[OK] Using configured: $($selected.name)" -ForegroundColor Green
+            } else {
+                Write-Host "[!] AI_FOUNDRY_RESOURCE_NAME '$configuredResourceName' not found." -ForegroundColor Yellow
+            }
         }
         
-        # Check if running in interactive mode
-        if ([Environment]::UserInteractive -and [Console]::IsInputRedirected -eq $false) {
-            $sel = Read-Host "Select (1-$($resources.Count))"
-            $selection = 0
-            if ([int]::TryParse($sel, [ref]$selection) -and $selection -ge 1 -and $selection -le $resources.Count) {
-                $selected = $resources[$selection - 1]
+        if (-not $selected) {
+            Write-Host "[!] Multiple AI Foundry resources found:" -ForegroundColor Yellow
+            for ($i = 0; $i -lt $resources.Count; $i++) {
+                $r = $resources[$i]
+                Write-Host "    [$($i+1)] $($r.name)  (RG: $($r.resourceGroup))" -ForegroundColor White
             }
-        } else {
-            Write-Host "[WARN] Non-interactive mode: using first resource. Set AI_FOUNDRY_RESOURCE_NAME to specify." -ForegroundColor Yellow
-            Write-Host "       Run: azd env set AI_FOUNDRY_RESOURCE_NAME <name>" -ForegroundColor Yellow
+            
+            # Check if running interactively
+            $isInteractive = [Environment]::UserInteractive -and -not [Console]::IsInputRedirected
+            
+            if ($isInteractive) {
+                $choice = (Read-Host "Select (1-$($resources.Count)) or press Enter for [1]").Trim()
+                if ([string]::IsNullOrWhiteSpace($choice)) { $choice = "1" }
+                $idx = [int]$choice - 1
+                if ($idx -ge 0 -and $idx -lt $resources.Count) {
+                    $selected = $resources[$idx]
+                } else {
+                    $selected = $resources[0]
+                }
+                Write-Host "[OK] Selected: $($selected.name)" -ForegroundColor Green
+            } else {
+                # Non-interactive: auto-select first and warn
+                $selected = $resources[0]
+                Write-Host "[!] Non-interactive mode: using first resource '$($selected.name)'" -ForegroundColor Yellow
+                Write-Host "    To specify: azd env set AI_FOUNDRY_RESOURCE_NAME <name>" -ForegroundColor Yellow
+            }
         }
     }
-    Write-Host "[OK] Using: $($selected.name)" -ForegroundColor Green
+    
+    Write-Host "[OK] Using AI Foundry resource: $($selected.name)" -ForegroundColor Green
     
     # Get first project
     $projectsUrl = "https://management.azure.com$($selected.id)/projects?api-version=2025-04-01-preview"
