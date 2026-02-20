@@ -1,4 +1,4 @@
-import { useRef, useEffect, useState } from "react";
+import { useRef, useEffect, useMemo } from "react";
 import { AssistantMessage } from "./chat/AssistantMessage";
 import { UserMessage } from "./chat/UserMessage";
 import { McpApprovalCard } from "./chat/McpApprovalCard";
@@ -35,10 +35,32 @@ interface ChatInterfaceProps {
 export const ChatInterface: React.FC<ChatInterfaceProps> = (props) => {
   const { messages, status, error, streamingMessageId, onSendMessage, onMcpApproval, onClearError, onOpenSettings, onNewChat, onCancelStream, hasMessages, disabled, agentName, agentDescription, agentLogo, starterPrompts, conversationId } = props;
   const messagesEndRef = useRef<HTMLDivElement>(null);
-  const [liveRegionMessage, setLiveRegionMessage] = useState<string>('');
-  
+  const liveRegionRef = useRef<HTMLDivElement>(null);
+  const clearTimerRef = useRef<ReturnType<typeof setTimeout>>(undefined);
+
   const isStreaming = status === 'streaming';
   const isBusy = disabled || ['sending', 'streaming'].includes(status);
+
+  // Derive live region message from props and announce via DOM ref to avoid setState-in-effect
+  const lastMessageIsAssistant = messages.length > 0 && messages[messages.length - 1].role === 'assistant';
+  const liveRegionMessage = useMemo(() => {
+    if (isStreaming) return 'Assistant is responding';
+    if (status === 'idle' && lastMessageIsAssistant) return 'Response complete';
+    return '';
+  }, [isStreaming, status, lastMessageIsAssistant]);
+
+  // Clear the announcement after 1s when response completes
+  useEffect(() => {
+    clearTimeout(clearTimerRef.current);
+    if (liveRegionMessage === 'Response complete') {
+      clearTimerRef.current = setTimeout(() => {
+        if (liveRegionRef.current) {
+          liveRegionRef.current.textContent = '';
+        }
+      }, 1000);
+      return () => clearTimeout(clearTimerRef.current);
+    }
+  }, [liveRegionMessage]);
 
   const scrollToBottom = () => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth", block: "end" });
@@ -48,18 +70,6 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = (props) => {
     // Scroll immediately on every message change for real-time streaming feel
     scrollToBottom();
   }, [messages]);
-
-  // Announce streaming status changes to screen readers
-  useEffect(() => {
-    if (isStreaming) {
-      setLiveRegionMessage('Assistant is responding');
-    } else if (status === 'idle' && messages.length > 0 && messages[messages.length - 1].role === 'assistant') {
-      setLiveRegionMessage('Response complete');
-      // Clear the message after announcement
-      const timer = setTimeout(() => setLiveRegionMessage(''), 1000);
-      return () => clearTimeout(timer);
-    }
-  }, [isStreaming, status, messages]);
 
   const handleSendMessage = (messageText: string, files?: File[]) => {
     if (!messageText.trim() || disabled) return;
@@ -73,9 +83,10 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = (props) => {
   return (
     <div className={styles.chatContainer}>
       {/* Live region for announcing streaming status to screen readers */}
-      <div 
-        role="status" 
-        aria-live="polite" 
+      <div
+        ref={liveRegionRef}
+        role="status"
+        aria-live="polite"
         aria-atomic="true"
         className="sr-only"
       >

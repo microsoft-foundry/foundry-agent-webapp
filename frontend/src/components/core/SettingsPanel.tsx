@@ -10,10 +10,20 @@ import {
 } from '@fluentui/react-components';
 import { Dismiss24Regular } from '@fluentui/react-icons';
 import { ThemePicker } from './ThemePicker';
+import { AgentPicker } from './AgentPicker';
+
+interface AgentOption {
+  id: string;
+  name: string;
+}
 
 interface SettingsPanelProps {
   isOpen: boolean;
   onOpenChange: (open: boolean) => void;
+  agents?: AgentOption[];
+  selectedAgentId?: string;
+  onAgentChange?: (agentId: string) => void;
+  agentPickerDisabled?: boolean;
 }
 
 const useStyles = makeStyles({
@@ -31,7 +41,7 @@ const useStyles = makeStyles({
   },
 });
 
-export const SettingsPanel: React.FC<SettingsPanelProps> = ({ isOpen, onOpenChange }) => {
+export const SettingsPanel: React.FC<SettingsPanelProps> = ({ isOpen, onOpenChange, agents, selectedAgentId, onAgentChange, agentPickerDisabled }) => {
   const styles = useStyles();
 
   return (
@@ -57,6 +67,17 @@ export const SettingsPanel: React.FC<SettingsPanelProps> = ({ isOpen, onOpenChan
       </DrawerHeader>
 
       <DrawerBody>
+        {agents && agents.length > 0 && selectedAgentId && onAgentChange && (
+          <div className={styles.section}>
+            <div className={styles.sectionTitle}>Agent</div>
+            <AgentPicker
+              agents={agents}
+              selectedAgentId={selectedAgentId}
+              onAgentChange={onAgentChange}
+              disabled={agentPickerDisabled}
+            />
+          </div>
+        )}
         <div className={styles.section}>
           <div className={styles.sectionTitle}>Appearance</div>
           <ThemePicker />

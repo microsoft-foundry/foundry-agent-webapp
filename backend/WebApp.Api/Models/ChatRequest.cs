@@ -22,6 +22,10 @@ public record ChatRequest
     /// Response ID to continue from (for MCP approval flow).
     /// </summary>
     public string? PreviousResponseId { get; init; }
+    /// <summary>
+    /// Optional agent ID to use instead of the default configured agent.
+    /// </summary>
+    public string? AgentId { get; init; }
 }
 
 /// <summary>

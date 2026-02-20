@@ -20,7 +20,7 @@ namespace WebApp.Api.Services;
 /// and direct ProjectResponsesClient for streaming (required for annotations, MCP approvals).
 /// See .github/skills/researching-azure-ai-sdk/SKILL.md for SDK patterns.
 /// </remarks>
-public class AgentFrameworkService : IDisposable
+public class AgentFrameworkService : IAgentCrudService, IDisposable
 {
     private readonly AIProjectClient _projectClient;
     private readonly string _agentId;
@@ -142,13 +142,17 @@ public class AgentFrameworkService : IDisposable
         List<FileAttachment>? fileDataUris = null,
         string? previousResponseId = null,
         McpApprovalResponse? mcpApproval = null,
+        string? agentId = null,
         [EnumeratorCancellation] CancellationToken cancellationToken = default)
     {
         ObjectDisposedException.ThrowIf(_disposed, this);
 
+        var effectiveAgentId = !string.IsNullOrEmpty(agentId) ? agentId : _agentId;
+
         _logger.LogInformation(
-            "Streaming message to conversation: {ConversationId}, ImageCount: {ImageCount}, FileCount: {FileCount}, HasApproval: {HasApproval}",
+            "Streaming message to conversation: {ConversationId}, AgentId: {AgentId}, ImageCount: {ImageCount}, FileCount: {FileCount}, HasApproval: {HasApproval}",
             conversationId,
+            effectiveAgentId,
             imageDataUris?.Count ?? 0,
             fileDataUris?.Count ?? 0,
             mcpApproval != null);
@@ -156,7 +160,7 @@ public class AgentFrameworkService : IDisposable
         // Get ProjectResponsesClient for the agent and conversation
         ProjectResponsesClient responsesClient
             = _projectClient.OpenAI.GetProjectResponsesClientForAgent(
-                new AgentReference(_agentId), 
+                new AgentReference(effectiveAgentId),
                 conversationId);
 
         CreateResponseOptions options = new() { StreamingEnabled = true };
@@ -718,6 +722,98 @@ public class AgentFrameworkService : IDisposable
     /// </summary>
     public (int InputTokens, int OutputTokens, int TotalTokens)? GetLastUsage() =>
         _lastUsage is null ? null : (_lastUsage.InputTokenCount, _lastUsage.OutputTokenCount, _lastUsage.TotalTokenCount);
+
+    /// <summary>
+    /// Create a new agent version via the v2 Agents API.
+    /// </summary>
+    public async Task<CreateAgentResponse> CreateAgentAsync(
+        CreateAgentRequest request,
+        CancellationToken cancellationToken = default)
+    {
+        ObjectDisposedException.ThrowIf(_disposed, this);
+
+        _logger.LogInformation("Creating agent: {Name}, Model: {Model}", request.Name, request.Model);
+
+        var definition = new PromptAgentDefinition(request.Model)
+        {
+            Instructions = request.Instructions,
+            Temperature = request.Temperature,
+            TopP = request.TopP
+        };
+
+        var options = new AgentVersionCreationOptions(definition)
+        {
+            Description = request.Description
+        };
+
+        if (request.Metadata != null)
+        {
+            foreach (var (key, value) in request.Metadata)
+            {
+                options.Metadata[key] = value;
+            }
+        }
+
+        var result = await _projectClient.Agents.CreateAgentVersionAsync(
+            request.Name, options, cancellationToken);
+
+        var agentVersion = result.Value;
+        var promptDef = agentVersion.Definition as PromptAgentDefinition;
+
+        _logger.LogInformation(
+            "Created agent: {Name}, Version: {Version}",
+            agentVersion.Name, agentVersion.Version);
+
+        return new CreateAgentResponse
+        {
+            Name = agentVersion.Name ?? request.Name,
+            Version = agentVersion.Version ?? "latest",
+            Description = agentVersion.Description,
+            Model = promptDef?.Model ?? request.Model,
+            Instructions = promptDef?.Instructions ?? request.Instructions,
+            CreatedAt = agentVersion.CreatedAt.ToUnixTimeSeconds(),
+            Metadata = agentVersion.Metadata?.ToDictionary(kvp => kvp.Key, kvp => kvp.Value)
+        };
+    }
+
+    /// <summary>
+    /// List agents via the v2 Agents API.
+    /// </summary>
+    public async Task<AgentListResponse> ListAgentsAsync(
+        int? limit = null,
+        CancellationToken cancellationToken = default)
+    {
+        ObjectDisposedException.ThrowIf(_disposed, this);
+
+        _logger.LogInformation("Listing agents, limit: {Limit}", limit);
+
+        var agents = new List<AgentListItem>();
+
+        await foreach (var record in _projectClient.Agents.GetAgentsAsync(
+            kind: null, limit: limit, order: null, after: null, before: null,
+            cancellationToken: cancellationToken))
+        {
+            var latestVersion = record.Versions?.Latest;
+            var definition = latestVersion?.Definition as PromptAgentDefinition;
+
+            agents.Add(new AgentListItem
+            {
+                Name = record.Name ?? record.Id,
+                Id = record.Id,
+                Description = latestVersion?.Description,
+                Model = definition?.Model ?? string.Empty,
+                CreatedAt = latestVersion?.CreatedAt.ToUnixTimeSeconds() ?? 0
+            });
+        }
+
+        _logger.LogInformation("Listed {Count} agents", agents.Count);
+
+        return new AgentListResponse
+        {
+            Agents = agents,
+            TotalCount = agents.Count
+        };
+    }
 
     public void Dispose()
     {

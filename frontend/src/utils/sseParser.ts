@@ -6,6 +6,7 @@ export type SseEventType = 'conversationId' | 'chunk' | 'annotations' | 'mcpAppr
 
 export interface SseEvent {
   type: SseEventType;
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   data: any;
 }
 

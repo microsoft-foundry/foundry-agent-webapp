@@ -1,11 +1,16 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect, useCallback } from 'react';
 import { ChatInterface } from './ChatInterface';
 import { SettingsPanel } from './core/SettingsPanel';
 import { useAppState } from '../hooks/useAppState';
 import { useAuth } from '../hooks/useAuth';
 import { ChatService } from '../services/chatService';
-import { useAppContext } from '../contexts/AppContext';
+import { useAppContext } from '../hooks/useAppContext';
 import styles from './AgentPreview.module.css';
+
+interface AgentOption {
+  id: string;
+  name: string;
+}
 
 interface AgentPreviewProps {
   agentId: string;
@@ -13,9 +18,12 @@ interface AgentPreviewProps {
   agentDescription?: string;
   agentLogo?: string;
   starterPrompts?: string[];
+  agents?: AgentOption[];
+  selectedAgentId?: string;
+  onAgentChange?: (agentId: string) => void;
 }
 
-export const AgentPreview: React.FC<AgentPreviewProps> = ({ agentId: _agentId, agentName, agentDescription, agentLogo, starterPrompts }) => {
+export const AgentPreview: React.FC<AgentPreviewProps> = ({ agentName, agentDescription, agentLogo, starterPrompts, agents, selectedAgentId, onAgentChange }) => {
   const { chat } = useAppState();
   const { dispatch } = useAppContext();
   const { getAccessToken } = useAuth();
@@ -23,10 +31,21 @@ export const AgentPreview: React.FC<AgentPreviewProps> = ({ agentId: _agentId, a
 
   // Create service instances
   const apiUrl = import.meta.env.VITE_API_URL || '/api';
-  
+
   const chatService = useMemo(() => {
     return new ChatService(apiUrl, getAccessToken, dispatch);
   }, [apiUrl, getAccessToken, dispatch]);
+
+  // Sync agentId to chatService when selection changes
+  useEffect(() => {
+    chatService.setAgentId(selectedAgentId ?? null);
+  }, [chatService, selectedAgentId]);
+
+  // Clear chat when agent changes, then propagate
+  const handleAgentChange = useCallback((newAgentId: string) => {
+    chatService.clearChat();
+    onAgentChange?.(newAgentId);
+  }, [chatService, onAgentChange]);
 
   const handleSendMessage = async (text: string, files?: File[]) => {
     await chatService.sendMessage(text, chat.currentConversationId, files);
@@ -80,6 +99,10 @@ export const AgentPreview: React.FC<AgentPreviewProps> = ({ agentId: _agentId, a
       <SettingsPanel
         isOpen={isSettingsOpen}
         onOpenChange={setIsSettingsOpen}
+        agents={agents}
+        selectedAgentId={selectedAgentId}
+        onAgentChange={handleAgentChange}
+        agentPickerDisabled={chat.status === 'streaming'}
       />
     </div>
   );

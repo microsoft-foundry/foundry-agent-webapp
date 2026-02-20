@@ -23,7 +23,7 @@ export function AgentIcon({
       aria-label={alt}
       image={logoUrl ? { src: logoUrl } : undefined}
       icon={!logoUrl ? <Bot24Regular /> : undefined}
-      size={sizeMap[size] as any}
+      size={sizeMap[size] as 16 | 20 | 24 | 28 | 32 | 36 | 40 | 48 | 56 | 64 | 72 | 96 | 120 | 128}
       color="brand"
     />
   );

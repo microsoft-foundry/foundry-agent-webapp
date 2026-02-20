@@ -1,5 +1,5 @@
 import { useMemo } from 'react';
-import { useAppContext } from '../contexts/AppContext';
+import { useAppContext } from './useAppContext';
 
 export const useAppState = () => {
   const { state, dispatch } = useAppContext();

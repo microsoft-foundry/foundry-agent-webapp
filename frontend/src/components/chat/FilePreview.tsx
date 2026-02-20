@@ -126,9 +126,14 @@ export const FilePreview: React.FC<FilePreviewProps> = ({ files, onRemove, disab
 
   useEffect(() => {
     const currentFileKeys = new Set(files.map(getFileKey));
-    
+
     // Clean up previews for removed files
     setThumbnails(prev => {
+      let changed = false;
+      for (const key of prev.keys()) {
+        if (!currentFileKeys.has(key)) { changed = true; break; }
+      }
+      if (!changed) return prev;
       const updated = new Map<string, string>();
       for (const [key, value] of prev) {
         if (currentFileKeys.has(key)) {
@@ -137,8 +142,13 @@ export const FilePreview: React.FC<FilePreviewProps> = ({ files, onRemove, disab
       }
       return updated;
     });
-    
+
     setTextPreviews(prev => {
+      let changed = false;
+      for (const key of prev.keys()) {
+        if (!currentFileKeys.has(key)) { changed = true; break; }
+      }
+      if (!changed) return prev;
       const updated = new Map<string, string>();
       for (const [key, value] of prev) {
         if (currentFileKeys.has(key)) {
@@ -147,7 +157,7 @@ export const FilePreview: React.FC<FilePreviewProps> = ({ files, onRemove, disab
       }
       return updated;
     });
-    
+
     // Clear pending reads for removed files
     for (const key of pendingReadsRef.current) {
       if (!currentFileKeys.has(key)) {
@@ -159,52 +169,40 @@ export const FilePreview: React.FC<FilePreviewProps> = ({ files, onRemove, disab
     for (const file of files) {
       const fileKey = getFileKey(file);
       const mimeType = getEffectiveMimeType(file);
-      
+
       // Skip if already loaded or currently loading
       if (pendingReadsRef.current.has(fileKey)) continue;
-      
-      if (mimeType.startsWith('image/')) {
-        // Check if already have this thumbnail
-        setThumbnails(prev => {
-          if (prev.has(fileKey)) return prev;
-          
-          pendingReadsRef.current.add(fileKey);
-          const reader = new FileReader();
-          reader.onload = (e) => {
-            pendingReadsRef.current.delete(fileKey);
-            if (e.target?.result) {
-              setThumbnails(p => new Map(p).set(fileKey, e.target!.result as string));
-            }
-          };
-          reader.onerror = () => {
-            pendingReadsRef.current.delete(fileKey);
-          };
-          reader.readAsDataURL(file);
-          return prev;
-        });
-      } else if (isTextPreviewable(file)) {
-        // Check if already have this text preview
-        setTextPreviews(prev => {
-          if (prev.has(fileKey)) return prev;
-          
-          pendingReadsRef.current.add(fileKey);
-          const reader = new FileReader();
-          reader.onload = (e) => {
-            pendingReadsRef.current.delete(fileKey);
-            if (e.target?.result) {
-              const text = e.target.result as string;
-              // Limit preview to first 200 characters for display
-              setTextPreviews(p => new Map(p).set(fileKey, text.slice(0, 200)));
-            }
-          };
-          reader.onerror = () => {
-            pendingReadsRef.current.delete(fileKey);
-          };
-          reader.readAsText(file);
-          return prev;
-        });
+
+      if (mimeType.startsWith('image/') && !thumbnails.has(fileKey)) {
+        pendingReadsRef.current.add(fileKey);
+        const reader = new FileReader();
+        reader.onload = (e) => {
+          pendingReadsRef.current.delete(fileKey);
+          if (e.target?.result) {
+            setThumbnails(p => new Map(p).set(fileKey, e.target!.result as string));
+          }
+        };
+        reader.onerror = () => {
+          pendingReadsRef.current.delete(fileKey);
+        };
+        reader.readAsDataURL(file);
+      } else if (isTextPreviewable(file) && !textPreviews.has(fileKey)) {
+        pendingReadsRef.current.add(fileKey);
+        const reader = new FileReader();
+        reader.onload = (e) => {
+          pendingReadsRef.current.delete(fileKey);
+          if (e.target?.result) {
+            const text = e.target.result as string;
+            setTextPreviews(p => new Map(p).set(fileKey, text.slice(0, 200)));
+          }
+        };
+        reader.onerror = () => {
+          pendingReadsRef.current.delete(fileKey);
+        };
+        reader.readAsText(file);
       }
     }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [files]);
 
   const formatFileSize = (bytes: number): string => {

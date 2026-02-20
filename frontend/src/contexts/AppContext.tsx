@@ -1,22 +1,16 @@
-import { createContext, useContext, useReducer, useEffect, useMemo } from 'react';
-import type { ReactNode, Dispatch } from 'react';
+import { useReducer, useEffect, useMemo } from 'react';
+import type { ReactNode } from 'react';
 import { useMsal } from '@azure/msal-react';
 import type { AppState, AppAction } from '../types/appState';
 import { initialAppState } from '../types/appState';
 import { appReducer } from '../reducers/appReducer';
-
-interface AppContextValue {
-  state: AppState;
-  dispatch: Dispatch<AppAction>;
-}
-
-const AppContext = createContext<AppContextValue | undefined>(undefined);
+import { AppContext } from './appContextValue';
 
 // Lightweight dev logger prevents accidental prod noise
 const devLogger = {
   enabled: import.meta.env.DEV,
   group(label: string) { if (this.enabled) console.group(label); },
-  log: function (...args: any[]) { if (this.enabled) console.log(...args); },
+  log: function (...args: unknown[]) { if (this.enabled) console.log(...args); },
   end() { if (this.enabled) console.groupEnd(); }
 };
 
@@ -26,7 +20,7 @@ const logStateChange = (action: AppAction, prevState: AppState, nextState: AppSt
   const timestamp = new Date().toISOString().split('T')[1].split('.')[0];
   devLogger.group(`🔄 [${timestamp}] ${action.type}`);
   devLogger.log('Action:', action);
-  const changes: Record<string, any> = {};
+  const changes: Record<string, string> = {};
   
   // Track all meaningful state changes
   if (prevState.auth.status !== nextState.auth.status) {
@@ -91,14 +85,4 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
   );
 };
 
-/**
- * Hook to access app state and dispatch
- * Throws error if used outside AppProvider
- */
-export const useAppContext = () => {
-  const context = useContext(AppContext);
-  if (!context) {
-    throw new Error('useAppContext must be used within AppProvider');
-  }
-  return context;
-};
+// useAppContext hook is in hooks/useAppContext.ts to satisfy react-refresh single-export rule

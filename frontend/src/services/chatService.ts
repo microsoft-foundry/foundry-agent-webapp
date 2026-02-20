@@ -44,6 +44,7 @@ export class ChatService {
   private currentStreamAbort?: AbortController;
   // Flag indicating an intentional user cancellation of the active stream.
   private streamCancelled = false;
+  private agentId: string | null = null;
 
   constructor(
     apiUrl: string,
@@ -53,6 +54,14 @@ export class ChatService {
     this.apiUrl = apiUrl;
     this.getAccessToken = getAccessToken;
     this.dispatch = dispatch;
+  }
+
+  /**
+   * Set the agent ID to use for subsequent requests.
+   * Pass null to revert to the default agent.
+   */
+  setAgentId(id: string | null): void {
+    this.agentId = id;
   }
 
   /**
@@ -132,12 +141,13 @@ export class ChatService {
     conversationId: string | null,
     imageDataUris: string[],
     fileDataUris: Array<{ dataUri: string; fileName: string; mimeType: string }>
-  ): Record<string, any> {
+  ): Record<string, unknown> {
     return {
       message,
       conversationId,
       imageDataUris: imageDataUris.length > 0 ? imageDataUris : undefined,
       fileDataUris: fileDataUris.length > 0 ? fileDataUris : undefined,
+      agentId: this.agentId || undefined,
     };
   }
 
@@ -155,7 +165,7 @@ export class ChatService {
   private async initiateStream(
     url: string,
     token: string,
-    body: Record<string, any>,
+    body: Record<string, unknown>,
     signal: AbortSignal
   ): Promise<Response> {
     const res = await fetch(url, {
@@ -393,13 +403,14 @@ export class ChatService {
             case 'done':
               return;
 
-            case 'error':
-              const error = createAppError(
+            case 'error': {
+              const streamError = createAppError(
                 new Error(`Stream error for message ${messageId}: ${event.data.message}`),
                 'STREAM'
               );
-              this.dispatch({ type: 'CHAT_ERROR', error });
-              throw error;
+              this.dispatch({ type: 'CHAT_ERROR', error: streamError });
+              throw streamError;
+            }
           }
         }
       }
@@ -465,6 +476,7 @@ export class ChatService {
           approvalRequestId,
           approved,
         },
+        agentId: this.agentId || undefined,
       };
 
       const response = await retryWithBackoff(

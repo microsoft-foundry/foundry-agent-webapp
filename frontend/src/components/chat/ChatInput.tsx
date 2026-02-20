@@ -90,7 +90,7 @@ export const ChatInput: React.FC<ChatInputProps> = ({
       const timer = setTimeout(() => focusInput(inputContainerRef), 100);
       return () => clearTimeout(timer);
     }
-  }, []); // Only on mount
+  }, [disabled]); // Only on mount
 
   // Restore focus after message is sent (when status changes from disabled back to enabled)
   useEffect(() => {

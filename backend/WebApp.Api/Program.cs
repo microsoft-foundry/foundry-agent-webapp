@@ -124,6 +124,7 @@ builder.Services.AddAuthorization(options =>
 // Register Azure AI Agent Service for Azure AI Foundry v2 Agents
 // Uses Azure.AI.Projects SDK which works with v2 Agents API (/agents/ endpoint with human-readable IDs).
 builder.Services.AddScoped<AgentFrameworkService>();
+builder.Services.AddScoped<IAgentCrudService>(sp => sp.GetRequiredService<AgentFrameworkService>());
 
 var app = builder.Build();
 
@@ -198,6 +199,7 @@ app.MapPost("/api/chat/stream", async (
             request.FileDataUris,
             request.PreviousResponseId,
             request.McpApproval,
+            request.AgentId,
             cancellationToken))
         {
             if (chunk.IsText && chunk.TextDelta != null)
@@ -398,7 +400,77 @@ app.MapGet("/api/agent/info", async (
 .RequireAuthorization(ScopePolicyName)
 .WithName("GetAgentInfo");
 
+// Create a new agent
+app.MapPost("/api/agents", async (
+    CreateAgentRequest request,
+    IAgentCrudService agentCrudService,
+    IHostEnvironment environment,
+    CancellationToken cancellationToken) =>
+{
+    try
+    {
+        if (string.IsNullOrWhiteSpace(request.Name))
+            return Results.Problem(title: "Invalid Request", detail: "Name is required.", statusCode: 400);
+        if (string.IsNullOrWhiteSpace(request.Model))
+            return Results.Problem(title: "Invalid Request", detail: "Model is required.", statusCode: 400);
+        if (string.IsNullOrWhiteSpace(request.Instructions))
+            return Results.Problem(title: "Invalid Request", detail: "Instructions are required.", statusCode: 400);
+
+        var response = await agentCrudService.CreateAgentAsync(request, cancellationToken);
+        return Results.Created($"/api/agents/{response.Name}", response);
+    }
+    catch (Exception ex)
+    {
+        var errorResponse = ErrorResponseFactory.CreateFromException(
+            ex,
+            500,
+            environment.IsDevelopment());
+
+        return Results.Problem(
+            title: errorResponse.Title,
+            detail: errorResponse.Detail,
+            statusCode: errorResponse.Status,
+            extensions: errorResponse.Extensions
+        );
+    }
+})
+.RequireAuthorization(ScopePolicyName)
+.WithName("CreateAgent");
+
+// List agents
+app.MapGet("/api/agents", async (
+    int? limit,
+    IAgentCrudService agentCrudService,
+    IHostEnvironment environment,
+    CancellationToken cancellationToken) =>
+{
+    try
+    {
+        var response = await agentCrudService.ListAgentsAsync(limit, cancellationToken);
+        return Results.Ok(response);
+    }
+    catch (Exception ex)
+    {
+        var errorResponse = ErrorResponseFactory.CreateFromException(
+            ex,
+            500,
+            environment.IsDevelopment());
+
+        return Results.Problem(
+            title: errorResponse.Title,
+            detail: errorResponse.Detail,
+            statusCode: errorResponse.Status,
+            extensions: errorResponse.Extensions
+        );
+    }
+})
+.RequireAuthorization(ScopePolicyName)
+.WithName("ListAgents");
+
 // Fallback route for SPA - serve index.html for any non-API routes
 app.MapFallbackToFile("index.html");
 
 app.Run();
+
+// Make Program accessible to WebApplicationFactory in test project
+public partial class Program { }
