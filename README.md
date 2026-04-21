@@ -34,7 +34,7 @@ The `azd up` command:
 
 ### GitHub Codespaces
 
-This repo includes a devcontainer configuration for Codespaces. The `azd` CLI, .NET 9 SDK, Node.js, and PowerShell are pre-installed. Open in Codespaces, then run `azd up` from the terminal to provision the Entra app and generate `.env` files.
+This repo includes a devcontainer configuration for Codespaces. The `azd` CLI, .NET 10 SDK, Node.js, and PowerShell are pre-installed. Open in Codespaces, then run `azd up` from the terminal to provision the Entra app and generate `.env` files.
 
 > **Corporate tenants**: Codespaces VMs are not managed by Intune, so organizations with device-compliance Conditional Access policies may block `az login` or token acquisition. The `az login --use-device-code` flow authenticates on your compliant browser, but some policies evaluate the device at token-use time — not just at login. If you hit authentication errors in Codespaces, use local development instead.
 
@@ -45,7 +45,7 @@ This repo includes a devcontainer configuration for Codespaces. The `azd` CLI, .
 - **Azure Developer CLI (azd)** - `winget install microsoft.azd`
 - **Azure CLI** - `winget install Microsoft.AzureCLI`
 - **Docker Desktop** (optional) - https://docs.docker.com/desktop/install/windows-install/
-- **.NET 9 SDK** - https://dot.net
+- **.NET 10 SDK** - https://dot.net
 - **Node.js 18+** - https://nodejs.org
 
 ### macOS
@@ -53,7 +53,7 @@ This repo includes a devcontainer configuration for Codespaces. The `azd` CLI, .
 - **Azure Developer CLI (azd)** - `brew tap azure/azd && brew install azd` or `curl -fsSL https://aka.ms/install-azd.sh | bash`
 - **Azure CLI** - `brew install azure-cli` or `curl -L https://aka.ms/InstallAzureCli | bash`
 - **Docker Desktop** (optional) - `brew install --cask docker` or [download](https://www.docker.com/products/docker-desktop/)
-- **.NET 9 SDK** - https://dot.net
+- **.NET 10 SDK** - https://dot.net
 - **Node.js 18+** - `brew install node` or https://nodejs.org
 
 > **Homebrew not installed?** Commands work without Homebrew using direct installers. The deployment script (`azd up`) checks for Homebrew and provides appropriate installation instructions.
@@ -63,7 +63,7 @@ This repo includes a devcontainer configuration for Codespaces. The `azd` CLI, .
 - **Azure Developer CLI (azd)** - `curl -fsSL https://aka.ms/install-azd.sh | bash`
 - **Azure CLI** - https://learn.microsoft.com/cli/azure/install-azure-cli-linux
 - **Docker Engine** (optional) - https://docs.docker.com/engine/install/
-- **.NET 9 SDK** - https://dot.net
+- **.NET 10 SDK** - https://dot.net
 - **Node.js 18+** - https://nodejs.org
 
 ### Azure Requirements
@@ -203,6 +203,16 @@ azd env set AI_AGENT_ID <agent-name>
 
 See [`frontend/README.md`](frontend/README.md) for the full feature list.
 
+## Known Limitations
+
+- **Uploaded image files accumulate.** Image attachments are uploaded to Azure
+  Foundry's Files endpoint (purpose `assistants`) and referenced by file id
+  from the Responses API. The GA `Azure.AI.Extensions.OpenAI` and `OpenAI`
+  SDKs do not expose an `expires_after` parameter on file upload, so files
+  persist until deleted. The in-app **Settings → Uploaded files** panel lists
+  the count/size of files previously uploaded by this app and offers a
+  one-click cleanup; operators can also purge via the Foundry portal.
+
 ## Development Workflow
 
 ### Option 1: VS Code Tasks (Recommended for AI-assisted development)
@@ -257,7 +267,7 @@ All layers point to the same fix: run `azd up` from the repo root.
 ### Known Limitations
 
 - **Office Documents**: DOCX, PPTX, and XLSX files are not supported for upload. Use PDF, images, or plain text files instead.
-- **Beta SDK**: This application uses pre-release Azure SDK packages. Check `backend/WebApp.Api/WebApp.Api.csproj` for current versions.
+- **GA Azure SDK**: This application uses GA `Azure.AI.Projects` and `Azure.AI.Extensions.OpenAI` packages. Check `backend/WebApp.Api/WebApp.Api.csproj` for current versions.
 - **npm Peer Dependencies**: React 19 has peer dependency conflicts with some packages. If adding packages that have peer dependencies (like `yjs` for `@lexical/yjs`), you must add them explicitly to `package.json`. Run `npm ci` locally to verify before committing.
 
 
@@ -427,3 +437,21 @@ This creates a backend API app registration with FIC, sets `api://{backendClient
     ├── hooks/                    # Agent hooks (commit gate, custom policies)
     └── skills/                   # 18 on-demand AI assistant skills
 ```
+
+## License
+
+MIT — see [LICENSE](LICENSE). This template is published by Microsoft under the
+same MIT terms as the official Microsoft sample
+[`Azure-Samples/get-started-with-ai-agents`](https://github.com/Azure-Samples/get-started-with-ai-agents),
+which is the React/Fluent UI Copilot reference this app's chat interface was
+built on top of (same `@fluentui-copilot/*` component libraries, same
+streaming-chat patterns). You may use, modify, and redistribute this code —
+including in commercial and white-label products — subject to the MIT license.
+
+> **Third-party packages.** The MIT grant covers this template's source code
+> only. Each runtime dependency (npm and NuGet) is governed by its own
+> license — review and accept them independently before redistribution. In
+> particular, verify the current `@fluentui-copilot/*` package terms on npm:
+> Microsoft's reuse of these packages in `Azure-Samples/get-started-with-ai-agents`
+> indicates the component model is intended for sample/template reuse, but it
+> does not by itself license those packages to you.

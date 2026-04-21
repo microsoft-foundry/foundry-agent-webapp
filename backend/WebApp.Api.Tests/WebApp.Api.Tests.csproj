@@ -1,13 +1,18 @@
 <Project Sdk="MSTest.Sdk/3.10.2">
 
   <PropertyGroup>
-    <TargetFramework>net9.0</TargetFramework>
+    <TargetFramework>net10.0</TargetFramework>
     <ImplicitUsings>enable</ImplicitUsings>
     <Nullable>enable</Nullable>
   </PropertyGroup>
 
   <ItemGroup>
     <ProjectReference Include="..\WebApp.Api\WebApp.Api.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- Pin transitive dependency to patched version (addresses GHSA-37gx-xxp4-5rgx / GHSA-w3x6-4m5h-cxqf) -->
+    <PackageReference Include="System.Security.Cryptography.Xml" Version="10.0.6" />
   </ItemGroup>
 
 </Project>

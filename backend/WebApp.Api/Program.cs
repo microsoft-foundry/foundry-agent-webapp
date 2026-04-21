@@ -540,6 +540,58 @@ app.MapGet("/api/files/{fileId}", async (
 .RequireAuthorization(ScopePolicyName)
 .WithName("DownloadFile");
 
+// Uploaded-files cleanup endpoints — inspect & delete image files previously uploaded by
+// this web app. Uses the WebAppUploadFilenamePrefix tag applied on upload to scope the
+// operation to our own files, because the Foundry Files API does not expose a typed
+// expires_after parameter in the GA SDK (see README "Known limitations").
+app.MapGet("/api/files/uploaded", async (
+    AgentFrameworkService agentService,
+    IHostEnvironment environment,
+    CancellationToken cancellationToken) =>
+{
+    try
+    {
+        var info = await agentService.ListUploadedFilesAsync(cancellationToken);
+        return Results.Ok(info);
+    }
+    catch (Exception ex)
+    {
+        var errorResponse = ErrorResponseFactory.CreateFromException(ex, 500, environment.IsDevelopment());
+        return Results.Problem(
+            title: errorResponse.Title,
+            detail: errorResponse.Detail,
+            statusCode: errorResponse.Status,
+            extensions: errorResponse.Extensions
+        );
+    }
+})
+.RequireAuthorization(ScopePolicyName)
+.WithName("ListUploadedFiles");
+
+app.MapPost("/api/files/cleanup", async (
+    AgentFrameworkService agentService,
+    IHostEnvironment environment,
+    CancellationToken cancellationToken) =>
+{
+    try
+    {
+        var result = await agentService.CleanupUploadedFilesAsync(cancellationToken);
+        return Results.Ok(result);
+    }
+    catch (Exception ex)
+    {
+        var errorResponse = ErrorResponseFactory.CreateFromException(ex, 500, environment.IsDevelopment());
+        return Results.Problem(
+            title: errorResponse.Title,
+            detail: errorResponse.Detail,
+            statusCode: errorResponse.Status,
+            extensions: errorResponse.Extensions
+        );
+    }
+})
+.RequireAuthorization(ScopePolicyName)
+.WithName("CleanupUploadedFiles");
+
 // Fallback route for SPA - serve index.html for any non-API routes
 app.MapFallbackToFile("index.html");
 

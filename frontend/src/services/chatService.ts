@@ -659,4 +659,34 @@ export class ChatService {
       throw createAppError(new Error(`Failed to delete conversation: ${response.status}`), 'API');
     }
   }
+
+  /**
+   * Get a summary of files uploaded by this web app that are still stored in the Foundry project.
+   * Scoped to files whose names begin with the web-app upload prefix (see backend).
+   */
+  async getUploadedFilesInfo(): Promise<{ count: number; totalBytes: number }> {
+    const token = await this.ensureAuthToken();
+    const response = await fetch(`${this.apiUrl}/files/uploaded`, {
+      headers: { Authorization: `Bearer ${token}` },
+    });
+    if (!response.ok) {
+      throw createAppError(new Error(`Failed to list uploaded files: ${response.status}`), 'API');
+    }
+    return response.json();
+  }
+
+  /**
+   * Delete every uploaded file that this web app previously uploaded for image attachments.
+   */
+  async cleanupUploadedFiles(): Promise<{ deleted: number; failed: number }> {
+    const token = await this.ensureAuthToken();
+    const response = await fetch(`${this.apiUrl}/files/cleanup`, {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${token}` },
+    });
+    if (!response.ok) {
+      throw createAppError(new Error(`Failed to clean up uploaded files: ${response.status}`), 'API');
+    }
+    return response.json();
+  }
 }

@@ -59,7 +59,7 @@ The Foundry Agent Service SDK has **two API surfaces** for agents:
 
 | API | Endpoint | ID Format | SDK Access |
 |-----|----------|-----------|------------|
-| **v2 Agents API** | `/agents/` | Human-readable (e.g., `dadjokes`) | `AIProjectClient.Agents` |
+| **v2 Agents API** | `/agents/` | Human-readable (e.g., `dadjokes`) | `AIProjectClient.AgentAdministrationClient` |
 | **OpenAI Assistants API** | `/assistants/` | OpenAI format (e.g., `asst_xxx`) | `PersistentAgentsClient` |
 
 **This project uses v2 Agents API** for human-readable agent IDs.
@@ -67,11 +67,12 @@ The Foundry Agent Service SDK has **two API surfaces** for agents:
 ```text
 Azure.AI.Projects (Main Entry Point)
 ├── AIProjectClient
-│   ├── .Agents.GetAgentAsync() → AgentRecord (v2 Agents API)
+│   ├── .AgentAdministrationClient.GetAgentVersionAsync() → ProjectsAgentVersion (v2 Agents API)
 │   ├── .GetPersistentAgentsClient() → PersistentAgentsClient (Assistants API)
-│   └── .OpenAI.GetProjectResponsesClientForAgent() → ProjectResponsesClient (Responses API)
-└── Sub-namespaces:
-    ├── Azure.AI.Projects.OpenAI (Responses API, conversations)
+│   └── .ProjectOpenAIClient.GetProjectResponsesClientForAgent() → ProjectResponsesClient (Responses API)
+└── Companion packages:
+    ├── Azure.AI.Projects.Agents (ProjectsAgentVersion, DeclarativeAgentDefinition, …)
+    ├── Azure.AI.Extensions.OpenAI (ProjectConversationsClient, ProjectOpenAIClient, …)
     └── OpenAI.Responses (streaming types)
 ```
 
@@ -100,8 +101,8 @@ Azure.AI.Projects (Main Entry Point)
 **Key pattern from official quickstart**:
 ```csharp
 AIProjectClient projectClient = new(new Uri(projectEndpoint), new AzureCliCredential());
-ProjectConversation conversation = projectClient.OpenAI.Conversations.CreateProjectConversation();
-ProjectResponsesClient responsesClient = projectClient.OpenAI.GetProjectResponsesClientForAgent(
+ProjectConversation conversation = projectClient.ProjectOpenAIClient.GetProjectConversationsClient().CreateProjectConversation();
+ProjectResponsesClient responsesClient = projectClient.ProjectOpenAIClient.GetProjectResponsesClientForAgent(
     defaultAgent: agentName,
     defaultConversationId: conversation.Id);
 ResponseResult response = responsesClient.CreateResponse("Your prompt");
@@ -189,13 +190,14 @@ Use GitHub search to find usage examples:
 | `Azure.Identity` | Authentication (`AzureDeveloperCliCredential`, `ManagedIdentityCredential`) |
 | `Microsoft.Identity.Web` | JWT Bearer authentication for API |
 
-**Note**: Check `WebApp.Api.csproj` for current versions. This project requires `Azure.AI.Projects` with v2 Agents API support (`AIProjectClient.Agents`).
+**Note**: Check `WebApp.Api.csproj` for current versions. This project requires `Azure.AI.Projects` GA with v2 Agents API support (`AIProjectClient.AgentAdministrationClient`).
 
-**Sub-namespaces available** (not separate packages):
-- `Azure.AI.Projects.OpenAI` - Responses API, conversations
-- `OpenAI.Responses` - Streaming types
+**Companion packages used**:
+- `Azure.AI.Projects.Agents` — `ProjectsAgentVersion`, `ProjectsAgentRecord`, `DeclarativeAgentDefinition` / `HostedAgentDefinition` / `WorkflowAgentDefinition`, `AgentAdministrationClient`
+- `Azure.AI.Extensions.OpenAI` — `ProjectOpenAIClient`, `ProjectConversationsClient`, `ProjectResponsesClient`, `ProjectConversation`
+- `OpenAI.Responses` — streaming types
 
-**Available Package**: `Microsoft.Agents.AI.AzureAI` (prerelease) supports v2 Agents API via `AIProjectClient` extension methods. See "Microsoft Agent Framework" section below.
+**Agent Framework (Microsoft.Agents.AI.AzureAI)**: Not referenced. As of rc5, incompatible with `Azure.AI.Projects 2.0.0` GA. See "Compatibility blocker" below.
 
 **Key Resources**:
 - NuGet (Azure.AI.Projects): https://www.nuget.org/packages/Azure.AI.Projects
@@ -278,91 +280,54 @@ await foreach (var update in responsesClient.CreateResponseStreamingAsync(...))
 }
 ```
 
-## Microsoft Agent Framework (Used — Hybrid Approach)
+## Microsoft Agent Framework (NOT used — see rationale)
 
-**Package**: `Microsoft.Agents.AI.AzureAI` (see `WebApp.Api.csproj` for version)
+**Package**: `Microsoft.Agents.AI.AzureAI` (prerelease, not referenced)
 
-**Status**: ✅ **Installed and active**. Agent Framework supports v2 Agents API via `AIProjectClient` extension methods.
+**Status**: ❌ **Not installed.** Blocked on compatibility with `Azure.AI.Projects 2.0.0` GA.
 
-### Current Usage Pattern
+### Compatibility blocker (as of rc5)
 
-This project uses a **hybrid approach**:
-- **Agent Framework** for simplified agent loading and metadata
-- **Direct SDK** for streaming (required for specialized response types)
+`Microsoft.Agents.AI.AzureAI 1.0.0-rc5` pins `Azure.AI.Projects 2.0.0-beta.2` and references types removed in the GA release. Attempting to use rc5 with `Azure.AI.Projects 2.0.0` throws `TypeLoadException` at runtime. Re-evaluate when rc6+ ships.
 
-```csharp
-// ✅ Agent loading via Agent Framework (simple)
-ChatClientAgent agent = await aiProjectClient.GetAIAgentAsync(
-    name: "dadjokes",           // Human-readable agent name
-    cancellationToken: ct);
+### Why we use the direct SDK anyway
 
-// Access AgentVersion for metadata
-AgentVersion? version = agent.GetService<AgentVersion>();
-var definition = version?.Definition as PromptAgentDefinition;
+Even when the compat blocker is lifted, this project's streaming path needs direct access to `ProjectResponsesClient` and typed response items that are not surfaced by the `IChatClient` abstraction:
 
-// ❌ Direct SDK for streaming (Agent Framework can't do this yet)
-ProjectResponsesClient responsesClient = projectClient.OpenAI.GetProjectResponsesClientForAgent(
-    new AgentReference(_agentId), conversationId);
-await foreach (var update in responsesClient.CreateResponseStreamingAsync(...)) { }
-```
-
-### Why Not Full Agent Framework for Streaming?
-
-`ChatClientAgent.RunStreamingAsync()` returns `IAsyncEnumerable<AgentRunResponseUpdate>`, which provides:
-- `Text` — text content (✅ works)
-- `RawRepresentation` — underlying SDK object (can cast at runtime)
-
-**The problem**: The `IChatClient` abstraction doesn't directly expose:
 - `McpToolCallApprovalRequestItem` for MCP approval flows
 - `FileSearchCallResponseItem` for file search quotes
 - `MessageResponseItem.OutputTextAnnotations` for citations
+- `ResponseItem.CreateMcpApprovalResponseItem()` to respond to MCP approvals
 
-**Workaround exists but adds complexity**: Cast `RawRepresentation` to underlying types:
+Routing through `ChatClientAgent.RunStreamingAsync()` would require casting `RawRepresentation` for each of these, which defeats the abstraction benefit.
+
+### Current pattern (direct SDK only)
+
 ```csharp
-await foreach (var update in agent.RunStreamingAsync(message, thread))
+// Agent metadata — no "latest" keyword in the REST spec; enumerate versions descending.
+ProjectsAgentVersion? agentVersion = null;
+await foreach (var v in projectClient.AgentAdministrationClient.GetAgentVersionsAsync(
+    agentName: agentName,
+    limit: 1,
+    order: AgentListOrder.Descending,
+    after: null,
+    before: null,
+    cancellationToken: ct))
 {
-    if (update.RawRepresentation is StreamingResponseOutputItemDoneUpdate itemDone)
-    {
-        if (itemDone.Item is McpToolCallApprovalRequestItem mcpApproval)
-        {
-            // Handle MCP approval...
-        }
-    }
+    agentVersion = v;
+    break;
 }
+var definition = agentVersion?.Definition as DeclarativeAgentDefinition;
+string model = definition?.Model ?? "";
+string instructions = definition?.Instructions ?? "";
+
+// Streaming — pin the resolved version so streaming hits the same version as metadata.
+ProjectResponsesClient responsesClient = projectClient.ProjectOpenAIClient
+    .GetProjectResponsesClientForAgent(
+        new AgentReference(agentId, agentVersion?.Version),
+        conversationId);
+await foreach (var update in responsesClient.CreateResponseStreamingAsync(...)) { }
 ```
-
-**Why we use direct SDK instead**: 
-1. Casting `RawRepresentation` defeats the abstraction benefit
-2. MCP approval flow requires `ResponseItem.CreateMcpApprovalResponseItem()` anyway
-3. Direct SDK approach is clearer and matches SDK samples
-
-### What Agent Framework IS Good For
-
-- **Simple streaming** — just text output with `.Text` property
-- **Multi-agent orchestration** — sequential, concurrent, handoff patterns
-- **Graph-based workflows** — streaming with checkpointing
-- **Built-in observability** — OpenTelemetry integration
-- **Tool invocation** — automatic `AIFunction` handling
-
-### Future Consideration
-
-When Agent Framework matures to expose annotations/MCP through its abstractions, we could simplify to:
-```csharp
-// Hypothetical future API
-await foreach (var update in agent.RunStreamingAsync(message, thread))
-{
-    if (update.IsMcpApproval) { }       // Doesn't exist yet
-    if (update.HasAnnotations) { }      // Doesn't exist yet  
-}
-```
-
-Track progress at: https://github.com/microsoft/Agents-for-net
-
-**Resources**:
-- NuGet: https://www.nuget.org/packages/Microsoft.Agents.AI.AzureAI
-- Documentation: https://learn.microsoft.com/agent-framework/
-- Source: https://github.com/microsoft/Agents-for-net/tree/main/src/libraries
-- API Reference: https://learn.microsoft.com/en-us/dotnet/api/microsoft.agents.ai.chatclientagent.runstreamingasync
 
 ## Migration Notes
 
@@ -407,7 +372,7 @@ Works even when `dotnet build` fails (loads from NuGet cache):
 cd backend/WebApp.Api; dotnet restore
 
 # Option A: Load from build output (requires successful build)
-$asm = [Reflection.Assembly]::LoadFrom((Resolve-Path "bin/Debug/net9.0/Azure.AI.Projects.dll"))
+$asm = [Reflection.Assembly]::LoadFrom((Resolve-Path "bin/Debug/net10.0/Azure.AI.Projects.dll"))
 
 # Option B: Load from NuGet cache (works even if build fails — use for pre-release migrations)
 $dll = Get-ChildItem "$env:USERPROFILE\.nuget\packages\azure.ai.projects" -Recurse -Filter "Azure.AI.Projects.dll" | Select-Object -Last 1
@@ -417,7 +382,7 @@ $asm = [Reflection.Assembly]::LoadFrom($dll.FullName)
 $asm.GetExportedTypes() | Where-Object { $_.Name -like "*Streaming*" } | ForEach-Object { $_.FullName }
 
 # Get method signatures with parameter details
-$type = $asm.GetType("Azure.AI.Projects.OpenAI.ProjectResponsesClient")
+$type = $asm.GetType("Azure.AI.Extensions.OpenAI.ProjectResponsesClient")
 $type.GetMethods() | Where-Object { $_.Name -like "*Async*" } | Select-Object Name, ReturnType, @{N='Params';E={($_.GetParameters() | ForEach-Object { "$($_.ParameterType.Name) $($_.Name)" }) -join ', '}}
 ```
 

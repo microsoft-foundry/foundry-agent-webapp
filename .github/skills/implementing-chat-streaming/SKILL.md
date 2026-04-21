@@ -44,7 +44,7 @@ app.MapPost("/api/chat/stream", async (
 
 **Actual return type**: `IAsyncEnumerable<StreamChunk>` (not raw strings)
 
-**Why direct SDK?** Uses `ProjectResponsesClient` directly (not Agent Framework's `ChatClientAgent.RunStreamingAsync()`) because the `IChatClient` abstraction doesn't expose MCP approvals, file search quotes, or citation annotations. See `.github/skills/researching-azure-ai-sdk/SKILL.md` for full rationale.
+**Why direct SDK?** Uses `ProjectResponsesClient` directly because we need typed access to MCP approvals, file search quotes, and citation annotations. See `.github/skills/researching-azure-ai-sdk/SKILL.md` for full rationale.
 
 ```csharp
 public async IAsyncEnumerable<StreamChunk> StreamMessageAsync(

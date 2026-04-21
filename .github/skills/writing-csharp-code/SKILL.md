@@ -170,33 +170,47 @@ app.MapFallbackToFile("index.html");  // MUST BE LAST
 
 **SDK Packages**:
 - `Azure.AI.Projects` — Main entry point, v2 Agents API (see `*.csproj` for version)
-- `Microsoft.Agents.AI.AzureAI` — Agent Framework extensions (see `*.csproj` for version)
+- `Azure.AI.Projects.Agents` — `ProjectsAgentVersion`, `DeclarativeAgentDefinition`, `AgentAdministrationClient`
+- `Azure.AI.Extensions.OpenAI` — `ProjectOpenAIClient`, `ProjectConversationsClient`, `ProjectResponsesClient`
 
-**Sub-namespaces**: `Azure.AI.Projects.OpenAI`, `OpenAI.Responses`, `Microsoft.Agents.AI`, `Microsoft.Extensions.AI`
+**Sub-namespaces**: `Azure.AI.Projects.Agents`, `Azure.AI.Extensions.OpenAI`, `OpenAI.Responses`
 
 **Key patterns**:
-- `IDisposable` implementation with `_agentLock.Dispose()`
+- `IDisposable` implementation
 - Disposal guards (`ObjectDisposedException.ThrowIf`) in all public methods
-- Environment-aware credential selection (ChainedTokenCredential vs ManagedIdentityCredential)
-- Cached `ChatClientAgent` instance with `SemaphoreSlim` for thread safety
-- Configuration validation (`AI_AGENT_ENDPOINT`, `AI_AGENT_ID`)
+- Environment-aware credential selection (ChainedTokenCredential vs ManagedIdentityCredential vs OnBehalfOfCredential)
+- Static-cached `ProjectsAgentVersion` resolved once per process via `SemaphoreSlim`
+- Configuration validation (`AI_AGENT_ENDPOINT`, `AI_AGENT_ID`, optional `AI_AGENT_VERSION`)
 
-**Agent Loading** (via Microsoft Agent Framework extension methods):
+**Agent Loading** (direct SDK):
 ```csharp
-// Uses Agent Framework for simplified agent loading
-ChatClientAgent agent = await projectClient.GetAIAgentAsync(
-    name: agentId,            // Human-readable agent name
-    cancellationToken: ct);
+// Load agent metadata directly from v2 Agents API.
+// NOTE: the REST spec has no "latest" keyword — the agent_version path parameter is a
+// plain string. To resolve the newest version, enumerate versions in descending order
+// and take the first. Pin a specific version by passing its id to GetAgentVersionAsync.
+ProjectsAgentVersion? agentVersion = null;
+await foreach (var v in projectClient.AgentAdministrationClient.GetAgentVersionsAsync(
+    agentName: agentId,
+    limit: 1,
+    order: AgentListOrder.Descending,
+    after: null,
+    before: null,
+    cancellationToken: ct))
+{
+    agentVersion = v;
+    break;
+}
 
-// Access AgentVersion from ChatClientAgent for metadata
-AgentVersion? version = agent.GetService<AgentVersion>();
+// Access definition for model/instructions/structured inputs
+var definition = agentVersion?.Definition as DeclarativeAgentDefinition;
 ```
 
 **Streaming** (direct ProjectResponsesClient — required for specialized types):
 ```csharp
-// Direct SDK for streaming — IChatClient doesn't expose MCP/annotations
-ProjectResponsesClient responsesClient = projectClient.OpenAI.GetProjectResponsesClientForAgent(
-    new AgentReference(agentId), conversationId);
+// Direct SDK for streaming — IChatClient doesn't expose MCP/annotations.
+// Pin to the resolved agentVersion.Version so streaming and metadata stay in sync.
+ProjectResponsesClient responsesClient = projectClient.ProjectOpenAIClient.GetProjectResponsesClientForAgent(
+    new AgentReference(agentId, agentVersion.Version), conversationId);
 ```
 
 **Why direct streaming?** The `IChatClient` abstraction doesn't expose:
@@ -316,11 +330,11 @@ $type.GetMethods() | Where-Object { $_.Name -like "*Async*" } | Select-Object Na
 
 | Assembly | Path | Contains |
 |----------|------|----------|
-| `Azure.AI.Projects.dll` | bin/Debug/net9.0/ | AIProjectClient, AgentRecord, Conversations |
-| `Microsoft.Agents.AI.AzureAI.dll` | bin/Debug/net9.0/ | ChatClientAgent, AgentVersion, GetAIAgentAsync extension |
-| `Microsoft.Agents.AI.Abstractions.dll` | bin/Debug/net9.0/ | IChatClient, AgentReference, PromptAgentDefinition |
-| `OpenAI.dll` | bin/Debug/net9.0/ | ResponseItem, StreamingResponse*, annotations |
-| `Azure.Identity.dll` | bin/Debug/net9.0/ | Credential types |
+| `Azure.AI.Projects.dll` | bin/Debug/net10.0/ | AIProjectClient, AgentReference |
+| `Azure.AI.Projects.Agents.dll` | bin/Debug/net10.0/ | AgentAdministrationClient, ProjectsAgentVersion, DeclarativeAgentDefinition |
+| `Azure.AI.Extensions.OpenAI.dll` | bin/Debug/net10.0/ | ProjectOpenAIClient, ProjectConversationsClient, ProjectResponsesClient |
+| `OpenAI.dll` | bin/Debug/net10.0/ | ResponseItem, StreamingResponse*, annotations |
+| `Azure.Identity.dll` | bin/Debug/net10.0/ | Credential types |
 
 **When to use**: Beta SDK properties aren't in docs, IDE tooltips are incomplete, or you need to verify a type's actual API surface.
 

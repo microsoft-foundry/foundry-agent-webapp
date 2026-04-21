@@ -1,9 +1,9 @@
 using Azure.AI.Projects;
-using Azure.AI.Projects.OpenAI;
+using Azure.AI.Projects.Agents;
+using Azure.AI.Extensions.OpenAI;
 using Azure.Core;
 using Azure.Identity;
-using Microsoft.Agents.AI;
-using Microsoft.Extensions.AI;
+using OpenAI.Files;
 using OpenAI.Responses;
 using Microsoft.Identity.Client;
 using Microsoft.Identity.Web;
@@ -18,15 +18,23 @@ namespace WebApp.Api.Services;
 /// Foundry Agent Service using v2 Agents API.
 /// </summary>
 /// <remarks>
-/// Uses Microsoft.Agents.AI.AzureAI extension methods on AIProjectClient for agent loading,
-/// and direct ProjectResponsesClient for streaming (required for annotations, MCP approvals).
+/// Uses AIProjectClient directly (Azure.AI.Projects GA): AgentAdministrationClient for agent
+/// metadata and ProjectResponsesClient for streaming (required for annotations, MCP approvals).
 /// See .github/skills/researching-azure-ai-sdk/SKILL.md for SDK patterns.
 /// </remarks>
 public class AgentFrameworkService : IDisposable
 {
     private readonly string _agentEndpoint;
     private readonly string _agentId;
-    private readonly string? _agentVersion;
+    /// <summary>
+    /// Optional concrete agent version id (e.g. "3") from <c>AI_AGENT_VERSION</c>.
+    /// When set, the agent is pinned to that immutable version for both metadata
+    /// (<see cref="GetAgentAsync"/>) and streaming (<c>AgentReference</c> passed to
+    /// <c>ProjectResponsesClient</c>). When null, the newest published version is
+    /// resolved on startup and used consistently. Foundry retains all published
+    /// versions, so pinning is useful for reproducibility across deployments.
+    /// </summary>
+    private readonly string? _configuredAgentVersion;
     private readonly ILogger<AgentFrameworkService> _logger;
     private readonly IHttpContextAccessor? _httpContextAccessor;
     private readonly string? _backendClientId;
@@ -36,13 +44,19 @@ public class AgentFrameworkService : IDisposable
     private readonly TokenCredential _fallbackCredential;
 
     // Agent metadata cache (static - shared across requests)
-    private static ChatClientAgent? s_cachedAgent;
+    private static ProjectsAgentVersion? s_cachedAgentVersion;
     private static AgentMetadataResponse? s_cachedMetadata;
     private static readonly SemaphoreSlim s_agentLock = new(1, 1);
     // MI assertion cache (static - user-independent, safe to share across requests)
     private static ManagedIdentityClientAssertion? s_miAssertion;
 
     private readonly IHttpClientFactory _httpClientFactory;
+
+    /// <summary>
+    /// Prefix applied to image files this web app uploads to the Foundry Files API,
+    /// used by the cleanup endpoint to scope deletes to files owned by this app.
+    /// </summary>
+    public const string WebAppUploadFilenamePrefix = "webapp-upload-";
 
     // Per-request project client
     private AIProjectClient? _projectClient;
@@ -65,7 +79,7 @@ public class AgentFrameworkService : IDisposable
         _agentId = configuration["AI_AGENT_ID"]
             ?? throw new InvalidOperationException("AI_AGENT_ID is not configured");
 
-        _agentVersion = string.IsNullOrWhiteSpace(configuration["AI_AGENT_VERSION"])
+        _configuredAgentVersion = string.IsNullOrWhiteSpace(configuration["AI_AGENT_VERSION"])
             ? null
             : configuration["AI_AGENT_VERSION"];
 
@@ -73,7 +87,7 @@ public class AgentFrameworkService : IDisposable
             "Initializing AgentFrameworkService: endpoint={Endpoint}, agentId={AgentId}, version={Version}", 
             _agentEndpoint, 
             _agentId,
-            _agentVersion ?? "latest");
+            _configuredAgentVersion ?? "<latest>");
 
         _backendClientId = configuration["ENTRA_BACKEND_CLIENT_ID"];
         _tenantId = configuration["ENTRA_TENANT_ID"] ?? configuration["AzureAd:TenantId"];
@@ -100,12 +114,12 @@ public class AgentFrameworkService : IDisposable
         else if (!string.IsNullOrEmpty(_managedIdentityClientId))
         {
             _logger.LogInformation("Production: Using user-assigned ManagedIdentityCredential: {MiClientId}", _managedIdentityClientId);
-            _fallbackCredential = new ManagedIdentityCredential(_managedIdentityClientId);
+            _fallbackCredential = new ManagedIdentityCredential(ManagedIdentityId.FromUserAssignedClientId(_managedIdentityClientId));
         }
         else
         {
             _logger.LogInformation("Production: Using ManagedIdentityCredential (system-assigned)");
-            _fallbackCredential = new ManagedIdentityCredential();
+            _fallbackCredential = new ManagedIdentityCredential(ManagedIdentityId.SystemAssigned);
         }
 
         if (_useObo)
@@ -195,51 +209,79 @@ public class AgentFrameworkService : IDisposable
     }
 
     /// <summary>
-    /// Get agent via Microsoft Agent Framework extension methods.
-    /// Uses AIProjectClient.GetAIAgentAsync() which wraps v2 Agents API.
+    /// Load the agent version metadata via AgentAdministrationClient (v2 Agents API).
+    /// When <see cref="_configuredAgentVersion"/> is set, fetches that specific version by id.
+    /// When unset, lists versions in descending order and picks the first (= newest).
     /// </summary>
-    private async Task<ChatClientAgent> GetAgentAsync(CancellationToken cancellationToken = default)
+    private async Task<ProjectsAgentVersion> GetAgentAsync(CancellationToken cancellationToken = default)
     {
         ObjectDisposedException.ThrowIf(_disposed, this);
 
-        if (s_cachedAgent != null)
-            return s_cachedAgent;
+        if (s_cachedAgentVersion != null)
+            return s_cachedAgentVersion;
 
         await s_agentLock.WaitAsync(cancellationToken);
         try
         {
-            if (s_cachedAgent != null)
-                return s_cachedAgent;
-
-            _logger.LogInformation("Loading agent via Agent Framework: {AgentId}", _agentId);
+            if (s_cachedAgentVersion != null)
+                return s_cachedAgentVersion;
 
             // Use the same credential path as all other operations (MI or OBO)
             var client = GetProjectClient();
 
-            // Use Microsoft.Agents.AI.AzureAI extension method - handles v2 Agents API internally
-            s_cachedAgent = await client.GetAIAgentAsync(
-                name: _agentId,
-                cancellationToken: cancellationToken);
+            ProjectsAgentVersion? loaded;
+            if (!string.IsNullOrWhiteSpace(_configuredAgentVersion))
+            {
+                _logger.LogInformation("Loading agent: {AgentId} version={Version}", _agentId, _configuredAgentVersion);
+                var response = await client.AgentAdministrationClient.GetAgentVersionAsync(
+                    _agentId,
+                    _configuredAgentVersion!,
+                    cancellationToken);
+                loaded = response.Value;
+            }
+            else
+            {
+                _logger.LogInformation("Loading agent: {AgentId} version=<latest>", _agentId);
+                loaded = null;
+                await foreach (var v in client.AgentAdministrationClient.GetAgentVersionsAsync(
+                    agentName: _agentId,
+                    limit: 1,
+                    order: AgentListOrder.Descending,
+                    after: null,
+                    before: null,
+                    cancellationToken: cancellationToken))
+                {
+                    loaded = v;
+                    break;
+                }
 
-            // Get the AgentVersion from the cached agent for metadata
-            var agentVersion = s_cachedAgent.GetService<AgentVersion>();
-            var definition = agentVersion?.Definition as PromptAgentDefinition;
-            
+                if (loaded is null)
+                {
+                    throw new InvalidOperationException(
+                        $"Agent '{_agentId}' has no versions. Create at least one version in AI Foundry.");
+                }
+            }
+
+            s_cachedAgentVersion = loaded;
+
+            var definition = s_cachedAgentVersion.Definition as DeclarativeAgentDefinition;
+
             _logger.LogInformation(
-                "Loaded agent: name={AgentName}, model={Model}, version={Version}", 
-                agentVersion?.Name ?? _agentId,
+                "Loaded agent: name={AgentName}, model={Model}, version={Version} (pinned={Pinned})",
+                s_cachedAgentVersion.Name ?? _agentId,
                 definition?.Model ?? "unknown",
-                agentVersion?.Version ?? "latest");
+                s_cachedAgentVersion.Version ?? "<unknown>",
+                !string.IsNullOrWhiteSpace(_configuredAgentVersion));
 
             // Log StructuredInputs at debug level for troubleshooting
             if (definition?.StructuredInputs != null && definition.StructuredInputs.Count > 0)
             {
-                _logger.LogDebug("Agent has {Count} StructuredInputs: {Keys}", 
-                    definition.StructuredInputs.Count, 
+                _logger.LogDebug("Agent has {Count} StructuredInputs: {Keys}",
+                    definition.StructuredInputs.Count,
                     string.Join(", ", definition.StructuredInputs.Keys));
             }
 
-            return s_cachedAgent;
+            return s_cachedAgentVersion;
         }
         catch (Exception ex)
         {
@@ -283,10 +325,14 @@ public class AgentFrameworkService : IDisposable
 
         CreateResponseOptions options = new() { StreamingEnabled = true };
 
+        // Resolve the concrete agent version up front so streaming and metadata use the same version.
+        var resolvedAgent = await GetAgentAsync(cancellationToken);
+        var resolvedVersion = _configuredAgentVersion ?? resolvedAgent.Version;
+
         // Always bind to conversation — the conversation maintains MCP approval state
         ProjectResponsesClient responsesClient
-            = GetProjectClient().OpenAI.GetProjectResponsesClientForAgent(
-                new AgentReference(_agentId, _agentVersion), 
+            = GetProjectClient().ProjectOpenAIClient.GetProjectResponsesClientForAgent(
+                new AgentReference(_agentId, resolvedVersion),
                 conversationId);
 
         // If continuing from MCP approval, add approval response items
@@ -312,7 +358,7 @@ public class AgentFrameworkService : IDisposable
             }
 
             // Build user message with optional images and files
-            ResponseItem userMessage = BuildUserMessage(message, imageDataUris, fileDataUris);
+            ResponseItem userMessage = await BuildUserMessageAsync(message, imageDataUris, fileDataUris, cancellationToken);
             options.InputItems.Add(userMessage);
         }
 
@@ -490,12 +536,14 @@ public class AgentFrameworkService : IDisposable
 
     /// <summary>
     /// Builds a ResponseItem for the user message with optional image and file attachments.
-    /// Validates count, size, MIME type, and Base64 format for both images and documents.
+    /// Validates count, size, MIME type, and Base64 format. Image bytes are uploaded to the
+    /// Foundry Files API (purpose: assistants) and referenced by file id.
     /// </summary>
-    private static ResponseItem BuildUserMessage(
-        string message, 
+    private async Task<ResponseItem> BuildUserMessageAsync(
+        string message,
         List<string>? imageDataUris,
-        List<FileAttachment>? fileDataUris = null)
+        List<FileAttachment>? fileDataUris,
+        CancellationToken cancellationToken)
     {
         if ((imageDataUris == null || imageDataUris.Count == 0) && 
             (fileDataUris == null || fileDataUris.Count == 0))
@@ -543,9 +591,32 @@ public class AgentFrameworkService : IDisposable
                     continue;
                 }
 
-                contentParts.Add(ResponseContentPart.CreateInputImagePart(
-                    BinaryData.FromBytes(bytes),
-                    mediaType));
+                // Upload image bytes via the OpenAI Files API and reference the returned file id.
+                // Foundry's Files proxy rejects purpose=vision/user_data with "Invalid file ContentType";
+                // purpose=assistants is the accepted path and the resulting file id works with
+                // CreateInputImagePart on the Responses API.
+                var fileClient = GetProjectClient().ProjectOpenAIClient.GetOpenAIFileClient();
+                var extension = mediaType switch
+                {
+                    "image/png" => ".png",
+                    "image/jpeg" => ".jpg",
+                    "image/gif" => ".gif",
+                    "image/webp" => ".webp",
+                    _ => ".bin",
+                };
+                // Prefix uploaded filenames so the cleanup endpoint can identify files uploaded
+                // by this web app versus other files in the shared Foundry project.
+                var imageFileName = $"{WebAppUploadFilenamePrefix}{Guid.NewGuid():N}{extension}";
+                using var imageStream = new MemoryStream(bytes);
+                // Azure Foundry Files API only accepts purpose = assistants | batch | fine-tune | evals.
+                // Use purpose=assistants per Azure Responses API docs.
+                // See: learn.microsoft.com/azure/foundry/openai/how-to/responses#file-input
+                var uploaded = await fileClient.UploadFileAsync(
+                    imageStream,
+                    imageFileName,
+                    FileUploadPurpose.Assistants,
+                    cancellationToken);
+                contentParts.Add(ResponseContentPart.CreateInputImagePart(uploaded.Value.Id));
             }
         }
 
@@ -753,7 +824,7 @@ public class AgentFrameworkService : IDisposable
             }
 
             ProjectConversation conversation
-                = await GetProjectClient().OpenAI.Conversations.CreateProjectConversationAsync(
+                = await GetProjectClient().ProjectOpenAIClient.GetProjectConversationsClient().CreateProjectConversationAsync(
                     conversationOptions,
                     cancellationToken);
 
@@ -785,11 +856,15 @@ public class AgentFrameworkService : IDisposable
         {
             _logger.LogInformation("Listing conversations (limit={Limit})", limit);
 
+            // Pin to the same resolved version metadata/streaming use.
+            var resolvedAgent = await GetAgentAsync(cancellationToken);
+            var resolvedVersion = _configuredAgentVersion ?? resolvedAgent.Version;
+
             var conversations = new List<ConversationSummary>();
             // Fetch limit+1 to detect if more conversations exist beyond the requested page
             var fetchLimit = limit + 1;
-            await foreach (var conv in GetProjectClient().OpenAI.Conversations.GetProjectConversationsAsync(
-                new AgentReference(_agentId, _agentVersion), cancellationToken: cancellationToken))
+            await foreach (var conv in GetProjectClient().ProjectOpenAIClient.GetProjectConversationsClient().GetProjectConversationsAsync(
+                new AgentReference(_agentId, resolvedVersion), cancellationToken: cancellationToken))
             {
                 conversations.Add(new ConversationSummary
                 {
@@ -828,7 +903,7 @@ public class AgentFrameworkService : IDisposable
             var messages = new List<ConversationMessageInfo>();
 
             // Filter to message items only
-            await foreach (var item in GetProjectClient().OpenAI.Conversations.GetProjectConversationItemsAsync(
+            await foreach (var item in GetProjectClient().ProjectOpenAIClient.GetProjectConversationsClient().GetProjectConversationItemsAsync(
                 conversationId, itemKind: AgentResponseItemKind.Message, cancellationToken: cancellationToken))
             {
                 var responseItem = item.AsResponseResultItem();
@@ -898,7 +973,7 @@ public class AgentFrameworkService : IDisposable
             }
 
             _logger.LogInformation("Downloading standard file: {FileId}", fileId);
-            var fileClient = GetProjectClient().OpenAI.GetOpenAIFileClient();
+            var fileClient = GetProjectClient().ProjectOpenAIClient.GetOpenAIFileClient();
             var fileContent = await fileClient.DownloadFileAsync(fileId, cancellationToken);
             var fileInfo = await fileClient.GetFileAsync(fileId, cancellationToken);
             var fileName = fileInfo.Value?.Filename ?? $"{fileId}.bin";
@@ -963,24 +1038,18 @@ public class AgentFrameworkService : IDisposable
 
     /// <summary>
     /// Get the agent metadata (name, description, etc.) for display in UI.
-    /// Uses Agent Framework's ChatClientAgent which provides access to AgentVersion.
+    /// Reads directly from the cached ProjectsAgentVersion.
     /// </summary>
     public async Task<AgentMetadataResponse> GetAgentMetadataAsync(CancellationToken cancellationToken = default)
     {
         ObjectDisposedException.ThrowIf(_disposed, this);
 
-        // Ensure agent is loaded via Agent Framework
-        var agent = await GetAgentAsync(cancellationToken);
+        var agentVersion = await GetAgentAsync(cancellationToken);
 
         if (s_cachedMetadata != null)
             return s_cachedMetadata;
 
-        // Get AgentVersion from the ChatClientAgent's services
-        var agentVersion = agent.GetService<AgentVersion>();
-        if (agentVersion == null)
-            throw new InvalidOperationException("Agent version not available from ChatClientAgent");
-
-        var definition = agentVersion.Definition as PromptAgentDefinition;
+        var definition = agentVersion.Definition as DeclarativeAgentDefinition;
         var metadata = agentVersion.Metadata?.ToDictionary(kvp => kvp.Key, kvp => kvp.Value);
 
         // Log metadata keys at debug level for troubleshooting
@@ -1048,9 +1117,8 @@ public class AgentFrameworkService : IDisposable
     {
         ObjectDisposedException.ThrowIf(_disposed, this);
 
-        var agent = await GetAgentAsync(cancellationToken);
-        var agentVersion = agent.GetService<AgentVersion>();
-        return agentVersion?.Name ?? _agentId;
+        var agentVersion = await GetAgentAsync(cancellationToken);
+        return agentVersion.Name ?? _agentId;
     }
 
     /// <summary>
@@ -1058,6 +1126,79 @@ public class AgentFrameworkService : IDisposable
     /// </summary>
     public (int InputTokens, int OutputTokens, int TotalTokens)? GetLastUsage() =>
         _lastUsage is null ? null : (_lastUsage.InputTokenCount, _lastUsage.OutputTokenCount, _lastUsage.TotalTokenCount);
+
+    /// <summary>
+    /// Returns a count and total byte size of files uploaded by this web app (identified by
+    /// filename prefix <see cref="WebAppUploadFilenamePrefix"/>) that are still stored in the
+    /// Foundry project. Uses <see cref="FilePurpose.Assistants"/> because that is the purpose
+    /// under which <see cref="BuildUserMessageAsync"/> stores image uploads.
+    /// </summary>
+    public async Task<UploadedFilesInfo> ListUploadedFilesAsync(CancellationToken cancellationToken = default)
+    {
+        ObjectDisposedException.ThrowIf(_disposed, this);
+
+        var fileClient = GetProjectClient().ProjectOpenAIClient.GetOpenAIFileClient();
+        var result = await fileClient.GetFilesAsync(FilePurpose.Assistants, cancellationToken);
+
+        int count = 0;
+        long totalBytes = 0;
+        foreach (var file in result.Value)
+        {
+            if (file.Filename != null && file.Filename.StartsWith(WebAppUploadFilenamePrefix, StringComparison.Ordinal))
+            {
+                count++;
+                totalBytes += file.SizeInBytesLong ?? file.SizeInBytes ?? 0;
+            }
+        }
+
+        _logger.LogInformation("ListUploadedFiles: {Count} files, {TotalBytes} bytes", count, totalBytes);
+        return new UploadedFilesInfo(count, totalBytes);
+    }
+
+    /// <summary>
+    /// Deletes every file in the Foundry project whose filename begins with
+    /// <see cref="WebAppUploadFilenamePrefix"/>. Intended as a user-triggered cleanup
+    /// because the GA Files API does not expose <c>expires_after</c> on upload — see README
+    /// "Known limitations". Returns counts of successful and failed deletions; failures are
+    /// logged but do not abort the loop.
+    /// </summary>
+    public async Task<UploadedFilesCleanupResult> CleanupUploadedFilesAsync(CancellationToken cancellationToken = default)
+    {
+        ObjectDisposedException.ThrowIf(_disposed, this);
+
+        var fileClient = GetProjectClient().ProjectOpenAIClient.GetOpenAIFileClient();
+        var result = await fileClient.GetFilesAsync(FilePurpose.Assistants, cancellationToken);
+
+        int deleted = 0;
+        int failed = 0;
+        foreach (var file in result.Value)
+        {
+            if (file.Filename == null || !file.Filename.StartsWith(WebAppUploadFilenamePrefix, StringComparison.Ordinal))
+            {
+                continue;
+            }
+
+            cancellationToken.ThrowIfCancellationRequested();
+
+            try
+            {
+                await fileClient.DeleteFileAsync(file.Id, cancellationToken);
+                deleted++;
+            }
+            catch (OperationCanceledException)
+            {
+                throw;
+            }
+            catch (Exception ex)
+            {
+                failed++;
+                _logger.LogWarning(ex, "Failed to delete uploaded file {FileId} ({FileName})", file.Id, file.Filename);
+            }
+        }
+
+        _logger.LogInformation("CleanupUploadedFiles: deleted={Deleted} failed={Failed}", deleted, failed);
+        return new UploadedFilesCleanupResult(deleted, failed);
+    }
 
     public void Dispose()
     {

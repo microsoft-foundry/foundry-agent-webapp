@@ -16,7 +16,7 @@ description: Provides architecture overview with state machines, SSE event flow,
 | Frontend | React 19 + Vite | 5173 | `frontend/src/App.tsx` |
 | Backend | ASP.NET Core 9 | 8080 | `backend/WebApp.Api/Program.cs` |
 | Auth | MSAL.js → JWT Bearer | — | `frontend/src/config/authConfig.ts` |
-| AI SDK | Azure.AI.Projects + Agent Framework | — | `backend/.../AgentFrameworkService.cs` |
+| AI SDK | Azure.AI.Projects (GA) + Azure.AI.Extensions.OpenAI | — | `backend/.../AgentFrameworkService.cs` |
 
 ### Data Flow
 

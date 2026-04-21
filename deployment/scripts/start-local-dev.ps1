@@ -1,6 +1,6 @@
 #!/usr/bin/env pwsh
 # Starts local dev servers (backend + frontend with hot reload)
-# Prerequisites: .NET 9 SDK, Node.js 18+, frontend/.env.local (from azd up)
+# Prerequisites: .NET 10 SDK, Node.js 18+, frontend/.env.local (from azd up)
 
 param(
     [switch]$SkipBrowser

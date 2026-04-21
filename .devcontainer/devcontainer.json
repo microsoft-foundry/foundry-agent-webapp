@@ -1,6 +1,6 @@
 {
   "name": "AI Agent Web App",
-  "image": "mcr.microsoft.com/devcontainers/dotnet:9.0",
+  "image": "mcr.microsoft.com/devcontainers/dotnet:10.0",
   "features": {
     "ghcr.io/devcontainers/features/node:1": {
       "version": "22"
@@ -19,7 +19,7 @@
         "GitHub.copilot-chat"
       ],
       "settings": {
-        "dotnetAcquisition.version": "9.0"
+        "dotnetAcquisition.version": "10.0"
       }
     }
   },

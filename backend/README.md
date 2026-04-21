@@ -14,7 +14,7 @@ ASP.NET Core 9 Minimal API application that:
 
 - **Single Container**: Serves both API and frontend from `wwwroot`
 - **JWT Authentication**: Validates tokens with `Chat.ReadWrite` scope
-- **AI Agent Integration**: Azure.AI.Projects + Microsoft.Agents.AI.AzureAI (v2 Agents API)
+- **AI Agent Integration**: Azure.AI.Projects (v2 Agents API)
 - **Streaming**: SSE-based chat streaming with cancellation support
 - **Starter Prompts**: Dynamic prompts from agent metadata
 - **Environment-Aware Auth**: ChainedTokenCredential (dev) / User-assigned ManagedIdentity (prod) / OBO (opt-in)
@@ -38,7 +38,7 @@ WebApp.Api/
 ## Running Locally
 
 ### Prerequisites
-- .NET 9 SDK
+- .NET 10 SDK
 - Azure CLI authenticated (`az login`)
 - `.env` file generated (run `azd up` first)
 
@@ -112,12 +112,12 @@ dotnet list package --vulnerable
 | Package | Purpose |
 |---------|---------|
 | Azure.AI.Projects | AI Foundry v2 Agents API SDK |
-| Microsoft.Agents.AI.AzureAI | Agent Framework (simplified agent loading) |
+| Azure.AI.Extensions.OpenAI | Project-scoped OpenAI clients (conversations, responses, files) |
 | Azure.Identity | ManagedIdentityCredential + OnBehalfOfCredential |
 | Microsoft.Identity.Web | JWT Bearer authentication |
 | Microsoft.Identity.Web.Certificateless | Secretless OBO via ManagedIdentityClientAssertion |
 
-See `WebApp.Api.csproj` for current versions. Uses v2 Agents API with human-readable agent IDs. Hybrid approach: Agent Framework for loading/metadata, direct SDK for streaming (required for MCP/annotations).
+See `WebApp.Api.csproj` for current versions. Uses v2 Agents API via `AgentAdministrationClient` for metadata and `ProjectResponsesClient` for streaming (required for MCP approvals and annotations). `AI_AGENT_VERSION` pins a specific version; when unset the newest version is resolved.
 
 ## Security
 

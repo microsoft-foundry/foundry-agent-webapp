@@ -98,14 +98,14 @@ stateDiagram-v2
     NotLoaded --> Loading: First request calls GetAgentAsync
     Loading --> Loading: SemaphoreSlim acquired
 
-    Loading --> Loaded: GetProjectClient().GetAIAgentAsync success
+    Loading --> Loaded: GetAgentVersionAsync (pinned via AI_AGENT_VERSION) or GetAgentVersionsAsync (latest, first of descending list)
     Loading --> Failed: Exception thrown
 
-    Loaded --> Loaded: Subsequent requests use s_cachedAgent
+    Loaded --> Loaded: Subsequent requests use s_cachedAgentVersion
     Failed --> Loading: Next request retries
 
     note right of Loaded
-        s_cachedAgent: ChatClientAgent (static)
+        s_cachedAgentVersion: ProjectsAgentVersion (static)
         s_cachedMetadata: AgentMetadataResponse (static)
         Cached across requests (not per-instance)
     end note

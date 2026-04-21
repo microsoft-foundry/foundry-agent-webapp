@@ -179,7 +179,7 @@ ENV VITE_ENTRA_TENANT_ID=$ENTRA_TENANT_ID
 RUN npm run build
 
 # Stage 2: Build .NET Backend
-FROM mcr.microsoft.com/dotnet/sdk:9.0 AS backend-builder
+FROM mcr.microsoft.com/dotnet/sdk:10.0 AS backend-builder
 WORKDIR /app
 COPY backend/WebApp.sln ./
 COPY backend/WebApp.Api/WebApp.Api.csproj ./backend/WebApp.Api/
@@ -189,7 +189,7 @@ COPY backend/ ./backend/
 RUN dotnet publish backend/WebApp.Api/WebApp.Api.csproj -c Release -o /app/publish
 
 # Stage 3: Runtime - Single container serving API + static files
-FROM mcr.microsoft.com/dotnet/aspnet:9.0-alpine
+FROM mcr.microsoft.com/dotnet/aspnet:10.0-alpine
 WORKDIR /app
 COPY --from=backend-builder /app/publish ./
 COPY --from=frontend-builder /app/frontend/dist ./wwwroot
