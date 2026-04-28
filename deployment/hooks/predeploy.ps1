@@ -73,7 +73,7 @@ try {
         $acrBuildArgs = @("--build-arg", "ENTRA_SPA_CLIENT_ID=$clientId", "--build-arg", "ENTRA_TENANT_ID=$tenantId")
         if ($backendClientId) { $acrBuildArgs += @("--build-arg", "ENTRA_BACKEND_CLIENT_ID=$backendClientId") }
         if ($appInsightsConnStrEscaped) { $acrBuildArgs += @("--build-arg", "APPLICATIONINSIGHTS_FRONTEND_CONNECTION_STRING=$appInsightsConnStrEscaped") }
-        $buildOutput = az acr build --registry $acrName --image "web:$imageTag" `
+        $buildOutput = az acr build --registry $acrName --resource-group $env:AZURE_RESOURCE_GROUP_NAME --image "web:$imageTag" `
             @acrBuildArgs `
             --file deployment/docker/frontend.Dockerfile . `
             --no-logs --only-show-errors 2>&1
