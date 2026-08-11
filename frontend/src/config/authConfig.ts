@@ -1,45 +1,55 @@
 import type { Configuration } from "@azure/msal-browser";
 import { LogLevel } from "@azure/msal-browser";
 
-// Environment variables (must be set during build or deployment)
-const clientId = import.meta.env.VITE_ENTRA_SPA_CLIENT_ID;
+export const isLocalPreview =
+  import.meta.env.DEV &&
+  import.meta.env.VITE_LOCAL_PREVIEW === "true";
+
+// Real values remain mandatory unless explicit local preview is enabled.
+const clientId =
+  import.meta.env.VITE_ENTRA_SPA_CLIENT_ID ||
+  (isLocalPreview ? "00000000-0000-0000-0000-000000000000" : "");
 
 if (!clientId) {
   throw new Error(
-    "VITE_ENTRA_SPA_CLIENT_ID is not set. This must be provided during build time. " +
-    "For local dev, ensure azd environment is configured and run preprovision hook."
+    "VITE_ENTRA_SPA_CLIENT_ID is not set. This must be provided during build time."
   );
 }
 
-// When OBO is enabled, scopes target the backend API app instead of the SPA
-const scopeClientId = import.meta.env.VITE_ENTRA_BACKEND_CLIENT_ID || clientId;
-
-const tenantId = import.meta.env.VITE_ENTRA_TENANT_ID;
+const tenantId =
+  import.meta.env.VITE_ENTRA_TENANT_ID ||
+  (isLocalPreview ? "organizations" : "");
 
 if (!tenantId) {
   throw new Error(
-    "VITE_ENTRA_TENANT_ID is not set. This must be provided during build time. " +
-    "For local dev, run setup-local-dev.ps1 to configure from azd environment."
+    "VITE_ENTRA_TENANT_ID is not set. This must be provided during build time."
   );
 }
 
+// When OBO is enabled, scopes target the backend API app instead of the SPA.
+const scopeClientId =
+  import.meta.env.VITE_ENTRA_BACKEND_CLIENT_ID || clientId;
+
 export const msalConfig: Configuration = {
   auth: {
-    clientId: clientId,
+    clientId,
     authority: `https://login.microsoftonline.com/${tenantId}`,
-    redirectUri: window.location.origin, // Will be https://<container-app-url> in production
+    redirectUri: window.location.origin,
     postLogoutRedirectUri: window.location.origin,
-    navigateToLoginRequestUrl: false, // Avoid redirect loops
+    navigateToLoginRequestUrl: false,
   },
   cache: {
-    cacheLocation: "localStorage", // Use localStorage for token caching
-    storeAuthStateInCookie: false, // Set to true if IE11 support needed
+    cacheLocation: "localStorage",
+    storeAuthStateInCookie: false,
   },
   system: {
     loggerOptions: {
-      logLevel: import.meta.env.DEV ? LogLevel.Info : LogLevel.Warning,
+      logLevel: import.meta.env.DEV
+        ? LogLevel.Info
+        : LogLevel.Warning,
       loggerCallback: (level, message, containsPii) => {
         if (containsPii) return;
+
         switch (level) {
           case LogLevel.Error:
             console.error(message);
@@ -59,12 +69,15 @@ export const msalConfig: Configuration = {
   },
 };
 
-// API permission scope (will match app registration in Step 08)
 export const loginRequest = {
-  scopes: [`api://${scopeClientId}/Chat.ReadWrite`],
+  scopes: isLocalPreview
+    ? []
+    : [`api://${scopeClientId}/Chat.ReadWrite`],
 };
 
 export const tokenRequest = {
-  scopes: [`api://${scopeClientId}/Chat.ReadWrite`],
-  forceRefresh: false, // Use cached token if valid
+  scopes: isLocalPreview
+    ? []
+    : [`api://${scopeClientId}/Chat.ReadWrite`],
+  forceRefresh: false,
 };

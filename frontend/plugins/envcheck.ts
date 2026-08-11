@@ -1,4 +1,8 @@
-import type { Plugin, ViteDevServer } from "vite";
+import {
+  loadEnv,
+  type Plugin,
+  type ViteDevServer,
+} from "vite";
 
 const REQUIRED_VARS = [
   "VITE_ENTRA_SPA_CLIENT_ID",
@@ -59,30 +63,56 @@ export function envCheckPlugin(): Plugin {
     configResolved(config) {
       if (config.command !== "serve") return;
 
+      const env = loadEnv(
+        config.mode,
+        config.envDir,
+        ""
+      );
+
+      const isLocalPreview =
+        config.mode === "development" &&
+        env.VITE_LOCAL_PREVIEW === "true";
+
+      if (isLocalPreview) {
+        missing = [];
+        console.info(
+          "IDA local preview enabled. Entra authentication checks are bypassed for this development session."
+        );
+        return;
+      }
+
       missing = REQUIRED_VARS.filter(
-        (v) => !process.env[v] || process.env[v] === "undefined"
+        (variableName) =>
+          !env[variableName] ||
+          env[variableName] === "undefined"
       );
 
       if (missing.length > 0) {
-        const border = "━".repeat(60);
-        console.warn(`\n\x1b[31m${border}\x1b[0m`);
-        console.warn(`\x1b[31m  ⚠️  SETUP REQUIRED\x1b[0m`);
-        console.warn(`\x1b[31m${border}\x1b[0m\n`);
+        const border = "─".repeat(60);
+
         console.warn(
-          `  Missing environment variables:\n${missing.map((v) => `    • ${v}`).join("\n")}\n`
-        );
-        console.warn(`  Run \x1b[36mazd up\x1b[0m from the repo root to create the`);
-        console.warn(`  Entra app registration and generate .env files.\n`);
-        console.warn(
-          `  Coming from the AI Foundry portal? You still need to`
+          `\n\x1b[31m${border}\x1b[0m`
         );
         console.warn(
-          `  run \x1b[36mazd up\x1b[0m — the portal gives AI resource vars, but`
+          "\x1b[31m  SETUP REQUIRED\x1b[0m"
         );
         console.warn(
-          `  this app also requires an Entra ID app for authentication.\n`
+          `\x1b[31m${border}\x1b[0m\n`
         );
-        console.warn(`\x1b[31m${border}\x1b[0m\n`);
+        console.warn(
+          `  Missing environment variables:\n${missing
+            .map(
+              (variableName) =>
+                `    • ${variableName}`
+            )
+            .join("\n")}\n`
+        );
+        console.warn(
+          "  Configure the required Entra application settings before running the authenticated application.\n"
+        );
+        console.warn(
+          `\x1b[31m${border}\x1b[0m\n`
+        );
       }
     },
     configureServer(server: ViteDevServer) {
