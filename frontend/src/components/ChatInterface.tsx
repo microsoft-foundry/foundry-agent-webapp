@@ -10,6 +10,7 @@ import { ErrorMessage } from "./core/ErrorMessage";
 import { KeyboardShortcuts } from "./core/KeyboardShortcuts";
 import { BuiltWithBadge } from "./core/BuiltWithBadge";
 import type { IChatItem } from "../types/chat";
+import type { IFileAttachment, PendingChatMessage, ResponseMode } from '../types/chat';
 import type { AppState } from "../types/appState";
 import type { AppError } from "../types/errors";
 import styles from './ChatInterface.module.css';
@@ -20,9 +21,12 @@ interface ChatInterfaceProps {
   error: AppError | null;
   streamingMessageId?: string;
   recoveredInput?: string;
-  recoveredAttachments?: import('../types/chat').IFileAttachment[];
-  pendingMessages?: Array<{ text: string; files?: File[] }>;
-  onSendMessage: (text: string, files?: File[]) => void;
+  recoveredAttachments?: IFileAttachment[];
+  recoveredMode?: ResponseMode;
+  pendingMessages?: PendingChatMessage[];
+  responseMode: ResponseMode;
+  onResponseModeChange: (mode: ResponseMode) => void;
+  onSendMessage: (text: string, files?: File[], mode?: ResponseMode) => void;
   onMcpApproval?: (approvalRequestId: string, approved: boolean, previousResponseId: string, conversationId: string) => void;
   onClearError?: () => void;
   onRecoveredInputConsumed?: () => void;
@@ -48,7 +52,7 @@ interface ChatInterfaceProps {
 }
 
 export const ChatInterface: React.FC<ChatInterfaceProps> = (props) => {
-  const { messages, status, error, streamingMessageId, recoveredInput, recoveredAttachments, pendingMessages, onSendMessage, onMcpApproval, onClearError, onRecoveredInputConsumed, onDequeueMessage, onOpenSettings, onNewChat, onCancelStream, onToggleSidebar, onExportConversation, onRegenerate, onEditMessage, onCancelEdit, isEditing, onFeedback, onDownloadFile, hasMessages, disabled, agentName, agentDescription, agentLogo, starterPrompts, conversationId } = props;
+  const { messages, status, error, streamingMessageId, recoveredInput, recoveredAttachments, recoveredMode, pendingMessages, responseMode, onResponseModeChange, onSendMessage, onMcpApproval, onClearError, onRecoveredInputConsumed, onDequeueMessage, onOpenSettings, onNewChat, onCancelStream, onToggleSidebar, onExportConversation, onRegenerate, onEditMessage, onCancelEdit, isEditing, onFeedback, onDownloadFile, hasMessages, disabled, agentName, agentDescription, agentLogo, starterPrompts, conversationId } = props;
   const deferredMessages = useDeferredValue(messages);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const [liveRegionMessage, setLiveRegionMessage] = useState<string>('');
@@ -108,9 +112,9 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = (props) => {
     }
   }, [isStreaming, status, messages, streamingMessageId]);
 
-  const handleSendMessage = (messageText: string, files?: File[]) => {
+  const handleSendMessage = (messageText: string, files?: File[], mode?: ResponseMode) => {
     if (!messageText.trim() || disabled) return;
-    onSendMessage(messageText, files);
+    onSendMessage(messageText, files, mode);
   };
 
   const handleStarterPromptClick = (prompt: string) => {
@@ -298,6 +302,8 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = (props) => {
         <Waves />
         <ChatInput
           onSubmit={handleSendMessage}
+          responseMode={responseMode}
+          onResponseModeChange={onResponseModeChange}
           disabled={isBusy}
           onOpenSettings={onOpenSettings}
           onNewChat={onNewChat}
@@ -312,6 +318,7 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = (props) => {
           onShowShortcuts={handleShowShortcuts}
           recoveredInput={recoveredInput}
           recoveredAttachments={recoveredAttachments}
+          recoveredMode={recoveredMode}
           onRecoveredInputConsumed={onRecoveredInputConsumed}
           pendingMessages={pendingMessages}
           onDequeueMessage={onDequeueMessage}

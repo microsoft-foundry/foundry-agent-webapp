@@ -1,3 +1,11 @@
+export type ResponseMode = 'auto' | 'simple' | 'detailed';
+
+export interface PendingChatMessage {
+  text: string;
+  files?: File[];
+  mode: ResponseMode;
+}
+
 export interface IChatItem {
   id: string;
   role?: 'user' | 'assistant' | 'approval';

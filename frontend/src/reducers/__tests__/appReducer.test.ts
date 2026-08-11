@@ -813,6 +813,7 @@ describe('appReducer', () => {
       const result = appReducer(state, {
         type: 'CHAT_RECOVER_MESSAGE',
         messageText: 'failed message',
+        mode: 'detailed',
         error: { code: 'NETWORK', message: 'Connection failed', recoverable: true },
         retryCount: 3,
       });
@@ -821,6 +822,7 @@ describe('appReducer', () => {
       expect(result.chat.messages[0].id).toBe('old-1');
       expect(result.chat.messages[1].id).toBe('old-2');
       expect(result.chat.recoveredInput).toBe('failed message');
+      expect(result.chat.recoveredMode).toBe('detailed');
     });
 
     it('sets error with retry count message and enables input', () => {
@@ -833,6 +835,7 @@ describe('appReducer', () => {
       const result = appReducer(state, {
         type: 'CHAT_RECOVER_MESSAGE',
         messageText: 'test',
+        mode: 'auto',
         error: { code: 'NETWORK', message: 'Connection failed', recoverable: true },
         retryCount: 3,
       });
@@ -854,6 +857,7 @@ describe('appReducer', () => {
       const result = appReducer(state, {
         type: 'CHAT_RECOVER_MESSAGE',
         messageText: 'test',
+        mode: 'auto',
         error: { code: 'AUTH', message: 'Unauthorized', recoverable: false },
         retryCount: 1,
       });
@@ -869,6 +873,7 @@ describe('appReducer', () => {
       const result = appReducer(state, {
         type: 'CHAT_RECOVER_MESSAGE',
         messageText: 'orphaned text',
+        mode: 'auto',
         error: { code: 'NETWORK', message: 'Failed', recoverable: true },
         retryCount: 3,
       });
@@ -887,6 +892,7 @@ describe('appReducer', () => {
       const result = appReducer(state, {
         type: 'CHAT_RECOVER_MESSAGE',
         messageText: 'test',
+        mode: 'auto',
         error: { code: 'STREAM', message: 'Broke', recoverable: true },
         retryCount: 2,
       });
@@ -923,34 +929,43 @@ describe('appReducer', () => {
     it('appends text to pendingMessages', () => {
       const state = createInitialState();
 
-      const result = appReducer(state, { type: 'CHAT_QUEUE_MESSAGE', text: 'first' });
+      const result = appReducer(state, { type: 'CHAT_QUEUE_MESSAGE', text: 'first', mode: 'simple' });
 
-      expect(result.chat.pendingMessages).toEqual([{ text: 'first', files: undefined }]);
+      expect(result.chat.pendingMessages).toEqual([{ text: 'first', files: undefined, mode: 'simple' }]);
     });
 
     it('appends multiple messages in order', () => {
       const state = createInitialState();
-      state.chat.pendingMessages = [{ text: 'first' }];
+      state.chat.pendingMessages = [{ text: 'first', mode: 'auto' }];
 
-      const result = appReducer(state, { type: 'CHAT_QUEUE_MESSAGE', text: 'second' });
+      const result = appReducer(state, { type: 'CHAT_QUEUE_MESSAGE', text: 'second', mode: 'detailed' });
 
-      expect(result.chat.pendingMessages).toEqual([{ text: 'first' }, { text: 'second', files: undefined }]);
+      expect(result.chat.pendingMessages).toEqual([{ text: 'first', mode: 'auto' }, { text: 'second', files: undefined, mode: 'detailed' }]);
+    });
+
+    it('preserves the selected mode for each queued message', () => {
+      const state = createInitialState();
+      state.chat.pendingMessages = [{ text: 'first', mode: 'simple' }];
+
+      const result = appReducer(state, { type: 'CHAT_QUEUE_MESSAGE', text: 'second', mode: 'detailed' });
+
+      expect(result.chat.pendingMessages.map(message => message.mode)).toEqual(['simple', 'detailed']);
     });
   });
 
   describe('CHAT_DEQUEUE_MESSAGE', () => {
     it('removes message at given index', () => {
       const state = createInitialState();
-      state.chat.pendingMessages = [{ text: 'a' }, { text: 'b' }, { text: 'c' }];
+      state.chat.pendingMessages = [{ text: 'a', mode: 'auto' }, { text: 'b', mode: 'auto' }, { text: 'c', mode: 'auto' }];
 
       const result = appReducer(state, { type: 'CHAT_DEQUEUE_MESSAGE', index: 1 });
 
-      expect(result.chat.pendingMessages).toEqual([{ text: 'a' }, { text: 'c' }]);
+      expect(result.chat.pendingMessages).toEqual([{ text: 'a', mode: 'auto' }, { text: 'c', mode: 'auto' }]);
     });
 
     it('handles removing last item', () => {
       const state = createInitialState();
-      state.chat.pendingMessages = [{ text: 'only' }];
+      state.chat.pendingMessages = [{ text: 'only', mode: 'auto' }];
 
       const result = appReducer(state, { type: 'CHAT_DEQUEUE_MESSAGE', index: 0 });
 
@@ -961,7 +976,7 @@ describe('appReducer', () => {
   describe('CHAT_CLEAR_QUEUE', () => {
     it('empties pendingMessages', () => {
       const state = createInitialState();
-      state.chat.pendingMessages = [{ text: 'a' }, { text: 'b' }, { text: 'c' }];
+      state.chat.pendingMessages = [{ text: 'a', mode: 'auto' }, { text: 'b', mode: 'auto' }, { text: 'c', mode: 'auto' }];
 
       const result = appReducer(state, { type: 'CHAT_CLEAR_QUEUE' });
 
@@ -972,7 +987,7 @@ describe('appReducer', () => {
   describe('CHAT_CLEAR', () => {
     it('clears pendingMessages', () => {
       const state = createInitialState();
-      state.chat.pendingMessages = [{ text: 'queued' }];
+      state.chat.pendingMessages = [{ text: 'queued', mode: 'auto' }];
 
       const result = appReducer(state, { type: 'CHAT_CLEAR' });
 
@@ -983,7 +998,7 @@ describe('appReducer', () => {
   describe('CHAT_LOAD_CONVERSATION', () => {
     it('clears pendingMessages when switching conversations', () => {
       const state = createInitialState();
-      state.chat.pendingMessages = [{ text: 'queued' }];
+      state.chat.pendingMessages = [{ text: 'queued', mode: 'auto' }];
 
       const result = appReducer(state, {
         type: 'CHAT_LOAD_CONVERSATION',
@@ -1473,6 +1488,7 @@ describe('appReducer', () => {
           "chat.pendingMessages",
           "chat.recoveredAttachments",
           "chat.recoveredInput",
+          "chat.recoveredMode",
           "chat.regenerateText",
           "chat.status",
           "chat.streamingMessageId",

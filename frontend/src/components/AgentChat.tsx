@@ -9,6 +9,8 @@ import { useAppContext } from '../contexts/AppContext';
 import { exportAsMarkdown, downloadMarkdown } from '../utils/exportConversation';
 import { trackFeedback } from '../services/telemetry';
 import type { IChatItem } from '../types/chat';
+import type { ResponseMode } from '../types/chat';
+import { getStoredResponseMode, setStoredResponseMode } from '../utils/responseMode';
 import styles from './AgentChat.module.css';
 
 interface AgentChatProps {
@@ -24,6 +26,7 @@ export const AgentChat: React.FC<AgentChatProps> = ({ agentName, agentDescriptio
   const { dispatch } = useAppContext();
   const { getAccessToken } = useAuth();
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
+  const [responseMode, setResponseMode] = useState<ResponseMode>(getStoredResponseMode);
 
   // Create service instances
   const apiUrl = import.meta.env.VITE_API_URL || '/api';
@@ -32,13 +35,18 @@ export const AgentChat: React.FC<AgentChatProps> = ({ agentName, agentDescriptio
     return new ChatService(apiUrl, getAccessToken, dispatch);
   }, [apiUrl, getAccessToken, dispatch]);
 
-  const handleSendMessage = async (text: string, files?: File[]) => {
+  const handleSendMessage = async (text: string, files?: File[], mode: ResponseMode = responseMode) => {
     if (chat.status === 'streaming' || chat.status === 'sending') {
-      dispatch({ type: 'CHAT_QUEUE_MESSAGE', text, files });
+      dispatch({ type: 'CHAT_QUEUE_MESSAGE', text, files, mode });
       return;
     }
-    await chatService.sendMessage(text, chat.currentConversationId, files);
+    await chatService.sendMessage(text, chat.currentConversationId, files, mode);
   };
+
+  const handleResponseModeChange = useCallback((mode: ResponseMode) => {
+    setResponseMode(mode);
+    setStoredResponseMode(mode);
+  }, []);
 
   // Drain the queue when the stream completes
   const pendingRef = useRef(chat.pendingMessages);
@@ -46,13 +54,13 @@ export const AgentChat: React.FC<AgentChatProps> = ({ agentName, agentDescriptio
 
   useEffect(() => {
     if (chat.status === 'idle' && pendingRef.current.length > 0) {
-      const combinedText = pendingRef.current.map(m => m.text).join('\n\n');
-      const combinedFiles = pendingRef.current.flatMap(m => m.files || []);
-      dispatch({ type: 'CHAT_CLEAR_QUEUE' });
+      const [nextMessage] = pendingRef.current;
+      dispatch({ type: 'CHAT_DEQUEUE_MESSAGE', index: 0 });
       chatService.sendMessage(
-        combinedText,
+        nextMessage.text,
         chat.currentConversationId,
-        combinedFiles.length > 0 ? combinedFiles : undefined
+        nextMessage.files,
+        nextMessage.mode
       );
     }
   }, [chat.status, chat.currentConversationId, chatService, dispatch]);
@@ -111,7 +119,7 @@ export const AgentChat: React.FC<AgentChatProps> = ({ agentName, agentDescriptio
     if (chat.regenerateText?.trim() && chat.status === 'idle') {
       const text = chat.regenerateText;
       dispatch({ type: 'CHAT_CONSUMED_REGENERATE' });
-      chatService.sendMessage(text, chat.currentConversationId);
+      chatService.sendMessage(text, chat.currentConversationId, undefined, responseMode);
     }
   }, [chat.regenerateText, chat.status, chat.currentConversationId, chatService, dispatch]);
 
@@ -216,6 +224,9 @@ export const AgentChat: React.FC<AgentChatProps> = ({ agentName, agentDescriptio
           streamingMessageId={chat.streamingMessageId}
           recoveredInput={chat.recoveredInput}
           recoveredAttachments={chat.recoveredAttachments}
+          recoveredMode={chat.recoveredMode}
+          responseMode={responseMode}
+          onResponseModeChange={handleResponseModeChange}
           onSendMessage={handleSendMessage}
           onClearError={handleClearError}
           onRecoveredInputConsumed={handleRecoveredInputConsumed}

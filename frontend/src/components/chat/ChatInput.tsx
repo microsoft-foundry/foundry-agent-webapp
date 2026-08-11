@@ -4,12 +4,13 @@ import {
   ImperativeControlPlugin,
   type ImperativeControlPluginRef,
 } from '@fluentui-copilot/react-copilot';
-import { Button, Toast, ToastTitle, Toaster, useId, useToastController, Text, makeStyles, tokens, Menu, MenuTrigger, MenuPopover, MenuList, MenuItem } from '@fluentui/react-components';
+import { Button, Toast, ToastTitle, Toaster, useId, useToastController, Text, makeStyles, tokens, Menu, MenuTrigger, MenuPopover, MenuList, MenuItem, Select, Tab, TabList, Tooltip } from '@fluentui/react-components';
 import { Attach24Regular, Stop24Regular, MoreHorizontal24Regular, History24Regular, Settings24Regular, ChatAdd24Regular, ArrowDownload24Regular, Keyboard24Regular } from '@fluentui/react-icons';
 import { FilePreview } from './FilePreview';
 import { VoiceInput } from './VoiceInput';
 import { MessageQueue } from './MessageQueue';
 import { validateFile, validateFileCount } from '../../utils/fileAttachments';
+import type { IFileAttachment, PendingChatMessage, ResponseMode } from '../../types/chat';
 import styles from './ChatInput.module.css';
 
 const CHAR_WARNING_THRESHOLD = 3000;
@@ -38,7 +39,9 @@ const useCharCounterStyles = makeStyles({
 });
 
 interface ChatInputProps {
-  onSubmit: (value: string, files?: File[]) => void;
+  onSubmit: (value: string, files?: File[], mode?: ResponseMode) => void;
+  responseMode: ResponseMode;
+  onResponseModeChange: (mode: ResponseMode) => void;
   disabled?: boolean;
   placeholder?: string;
   onOpenSettings?: () => void;
@@ -52,9 +55,10 @@ interface ChatInputProps {
   isEditing?: boolean;
   onCancelEdit?: () => void;
   recoveredInput?: string;
-  recoveredAttachments?: import('../../types/chat').IFileAttachment[];
+  recoveredAttachments?: IFileAttachment[];
+  recoveredMode?: ResponseMode;
   onRecoveredInputConsumed?: () => void;
-  pendingMessages?: Array<{ text: string; files?: File[] }>;
+  pendingMessages?: PendingChatMessage[];
   onDequeueMessage?: (index: number) => void;
   droppedFiles?: File[];
   onDroppedFilesConsumed?: () => void;
@@ -69,6 +73,8 @@ const focusInput = (containerRef: React.RefObject<HTMLDivElement | null>) => {
 
 export const ChatInput: React.FC<ChatInputProps> = ({
   onSubmit,
+  responseMode,
+  onResponseModeChange,
   disabled = false,
   placeholder = "Type your message...",
   onOpenSettings,
@@ -83,6 +89,7 @@ export const ChatInput: React.FC<ChatInputProps> = ({
   onCancelEdit,
   recoveredInput,
   recoveredAttachments,
+  recoveredMode,
   onRecoveredInputConsumed,
   pendingMessages = [],
   onDequeueMessage,
@@ -91,6 +98,7 @@ export const ChatInput: React.FC<ChatInputProps> = ({
 }) => {
   const [inputText, setInputText] = useState<string>("");
   const [selectedFiles, setSelectedFiles] = useState<File[]>([]);
+  const [recoveredSubmissionMode, setRecoveredSubmissionMode] = useState<ResponseMode>();
   const controlRef = useRef<ImperativeControlPluginRef>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const inputContainerRef = useRef<HTMLDivElement>(null);
@@ -141,6 +149,7 @@ export const ChatInput: React.FC<ChatInputProps> = ({
     if (recoveredInput) {
       setInputText(recoveredInput);
       controlRef.current?.setInputText(recoveredInput);
+      setRecoveredSubmissionMode(recoveredMode);
       // Restore attachments by converting dataURIs back to Files
       if (recoveredAttachments?.length) {
         for (const att of recoveredAttachments) {
@@ -159,7 +168,7 @@ export const ChatInput: React.FC<ChatInputProps> = ({
       const timer = setTimeout(() => focusInput(inputContainerRef), 50);
       return () => clearTimeout(timer);
     }
-  }, [recoveredInput, recoveredAttachments, onRecoveredInputConsumed]);
+  }, [recoveredInput, recoveredAttachments, recoveredMode, onRecoveredInputConsumed]);
 
   // Clear input when edit is cancelled
   const prevEditingRef = useRef(isEditing);
@@ -208,9 +217,10 @@ export const ChatInput: React.FC<ChatInputProps> = ({
 
   const handleSubmit = () => {
     if (inputText && inputText.trim() !== "") {
-      onSubmit(inputText.trim(), selectedFiles.length > 0 ? selectedFiles : undefined);
+      onSubmit(inputText.trim(), selectedFiles.length > 0 ? selectedFiles : undefined, recoveredSubmissionMode ?? responseMode);
       setInputText("");
       setSelectedFiles([]);
+      setRecoveredSubmissionMode(undefined);
       controlRef.current?.setInputText("");
     }
   };
@@ -348,6 +358,39 @@ export const ChatInput: React.FC<ChatInputProps> = ({
           disabled={disabled}
         />
         <div className={styles.inputWrapper}>
+        <div className={styles.responseModeRow}>
+          <Text className={styles.responseModeLabel}>Response depth</Text>
+          <TabList
+            className={styles.modeSelector}
+            aria-label="IDA response mode"
+            selectedValue={responseMode}
+            onTabSelect={(_, data) => onResponseModeChange(data.value as ResponseMode)}
+            size="small"
+          >
+            <Tooltip content="IDA selects the appropriate response depth." relationship="description">
+              <Tab value="auto" aria-label="Auto response mode">Auto</Tab>
+            </Tooltip>
+            <Tooltip content="A concise answer using targeted evidence." relationship="description">
+              <Tab value="simple" aria-label="Simple response mode">Simple</Tab>
+            </Tooltip>
+            <Tooltip content="A fuller answer drawing across all IDA knowledge bases." relationship="description">
+              <Tab value="detailed" aria-label="Detailed response mode">Detailed</Tab>
+            </Tooltip>
+          </TabList>
+          <Tooltip content="Select how much detail IDA should use in its next response." relationship="description">
+            <Select
+              className={styles.compactModeSelector}
+              aria-label="IDA response depth"
+              value={responseMode}
+              onChange={(_, data) => onResponseModeChange(data.value as ResponseMode)}
+              size="small"
+            >
+              <option value="auto">Auto</option>
+              <option value="simple">Simple</option>
+              <option value="detailed">Detailed</option>
+            </Select>
+          </Tooltip>
+        </div>
         <ChatInputFluent
           aria-label="Chat Input"
           aria-describedby={showCounter ? charCounterId : undefined}

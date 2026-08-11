@@ -41,6 +41,21 @@
   background: transparent;
 }
 
+.responseModeRow {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 0.5rem;
+  min-width: 0;
+  padding: 0.5rem 0.75rem 0;
+}
+
+.responseModeLabel {
+  color: var(--colorNeutralForeground3);
+  font-size: 0.75rem;
+  white-space: nowrap;
+}
+
 /* Style the built-in send button to match our subtle buttons */
 .inputWrapper :global(.fui-ChatInput) :global(button) {
   color: var(--colorNeutralForeground2);
@@ -117,6 +132,35 @@
   display: flex;
   align-items: center;
   gap: 0.25rem;
+}
+
+.modeSelector {
+  min-width: 0;
+}
+
+.modeSelector :global(.fui-Tab) {
+  min-width: auto;
+  padding: 2px 6px;
+  font-size: 0.75rem;
+}
+
+.compactModeSelector {
+  display: none;
+  max-width: 6.5rem;
+}
+
+@media (max-width: 480px) {
+  .responseModeRow {
+    padding-right: 0.5rem;
+  }
+
+  .modeSelector {
+    display: none;
+  }
+
+  .compactModeSelector {
+    display: block;
+  }
 }
 
 .divider {

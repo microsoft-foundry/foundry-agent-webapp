@@ -147,4 +147,28 @@ describe('ChatService', () => {
       await expect(chatService.getConversationMessages('conv-123')).rejects.toThrow();
     });
   });
+
+  describe('sendMessage', () => {
+    it('includes the selected mode in the outgoing chat request', async () => {
+      const fetchMock = vi.fn().mockResolvedValue({
+        ok: true,
+        body: {
+          getReader: () => ({
+            read: vi.fn().mockResolvedValue({ done: true }),
+            releaseLock: vi.fn(),
+          }),
+        },
+      });
+      vi.stubGlobal('fetch', fetchMock);
+
+      await chatService.sendMessage('Explain the finding', 'conversation-1', undefined, 'detailed');
+
+      expect(fetchMock).toHaveBeenCalledWith(
+        '/api/chat/stream',
+        expect.objectContaining({
+          body: expect.stringContaining('"mode":"detailed"'),
+        }),
+      );
+    });
+  });
 });

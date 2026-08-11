@@ -1,7 +1,7 @@
 import type { Dispatch } from 'react';
 import type { AppAction } from '../types/appState';
 import type { ConversationSummary, ConversationMessageInfo } from '../types/appState';
-import type { IChatItem } from '../types/chat';
+import type { IChatItem, ResponseMode } from '../types/chat';
 import type { AppError } from '../types/errors';
 import { isAppError } from '../types/errors';
 import { trackException } from './telemetry';
@@ -127,19 +127,22 @@ export class ChatService {
    * @param conversationId - Current conversation ID (null for new conversations)
    * @param imageDataUris - Array of base64 data URIs for images
    * @param fileDataUris - Array of file attachments with metadata
+  * @param mode - Requested response depth
    * @returns Request body object
    */
   private constructRequestBody(
     message: string,
     conversationId: string | null,
     imageDataUris: string[],
-    fileDataUris: Array<{ dataUri: string; fileName: string; mimeType: string }>
+    fileDataUris: Array<{ dataUri: string; fileName: string; mimeType: string }>,
+    mode: ResponseMode
   ): Record<string, unknown> {
     return {
       message,
       conversationId,
       imageDataUris: imageDataUris.length > 0 ? imageDataUris : undefined,
       fileDataUris: fileDataUris.length > 0 ? fileDataUris : undefined,
+      mode,
     };
   }
 
@@ -188,12 +191,14 @@ export class ChatService {
    * @param messageText - The user's message text
    * @param currentConversationId - Current conversation ID (null for new conversations)
    * @param files - Optional array of files to attach (images and documents)
+  * @param mode - Requested response depth
    * @throws {Error} If authentication fails (non-retryable)
    */
   async sendMessage(
     messageText: string,
     currentConversationId: string | null,
-    files?: File[]
+    files?: File[],
+    mode: ResponseMode = 'auto'
   ): Promise<void> {
     if (this.currentStreamAbort) {
       this.streamCancelled = true;
@@ -244,7 +249,8 @@ export class ChatService {
       messageText,
       currentConversationId,
       imageDataUris,
-      fileDataUris
+      fileDataUris,
+      mode
     );
 
     const maxRetries = 3;
@@ -314,6 +320,7 @@ export class ChatService {
     this.dispatch({
       type: 'CHAT_RECOVER_MESSAGE',
       messageText,
+      mode,
       error: appError,
       retryCount: maxRetries,
     });

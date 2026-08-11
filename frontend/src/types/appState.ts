@@ -1,9 +1,9 @@
 import type { AccountInfo } from '@azure/msal-browser';
-import type { IChatItem, IUsageInfo, IAnnotation, IMcpApprovalRequest, IFileAttachment } from './chat';
+import type { IChatItem, IUsageInfo, IAnnotation, IMcpApprovalRequest, IFileAttachment, PendingChatMessage, ResponseMode } from './chat';
 import type { AppError } from './errors';
 
 // Re-export types for convenience
-export type { IChatItem, IUsageInfo, IAnnotation, IMcpApprovalRequest, IFileAttachment };
+export type { IChatItem, IUsageInfo, IAnnotation, IMcpApprovalRequest, IFileAttachment, PendingChatMessage, ResponseMode };
 
 export interface ConversationSummary {
   id: string;
@@ -37,9 +37,10 @@ export interface AppState {
     streamingMessageId?: string;
     recoveredInput?: string;
     recoveredAttachments?: IFileAttachment[];
+    recoveredMode?: ResponseMode;
     editSnapshot?: IChatItem[]; // messages removed during edit, for undo
     regenerateText?: string;// auto-resend text for regenerate/edit flows
-    pendingMessages: Array<{ text: string; files?: File[] }>;
+    pendingMessages: PendingChatMessage[];
   };
 
   // Conversation history state
@@ -82,9 +83,9 @@ export type AppAction =
   | { type: 'CHAT_ADD_ASSISTANT_MESSAGE'; messageId: string }
   | { type: 'CHAT_LOAD_CONVERSATION'; conversationId: string; messages: IChatItem[] }
   | { type: 'CHAT_STREAM_RETRY'; messageId: string; attempt: number; maxRetries: number }
-  | { type: 'CHAT_RECOVER_MESSAGE'; messageText: string; error: AppError; retryCount: number }
+  | { type: 'CHAT_RECOVER_MESSAGE'; messageText: string; mode: ResponseMode; error: AppError; retryCount: number }
   | { type: 'CHAT_CONSUMED_RECOVERED_INPUT' }
-  | { type: 'CHAT_QUEUE_MESSAGE'; text: string; files?: File[] }
+  | { type: 'CHAT_QUEUE_MESSAGE'; text: string; files?: File[]; mode: ResponseMode }
   | { type: 'CHAT_DEQUEUE_MESSAGE'; index: number }
   | { type: 'CHAT_CLEAR_QUEUE' }
   | { type: 'CHAT_REGENERATE' }
@@ -116,6 +117,7 @@ export const initialAppState: AppState = {
     streamingMessageId: undefined,
     recoveredInput: undefined,
     recoveredAttachments: undefined,
+    recoveredMode: undefined,
     editSnapshot: undefined,
     regenerateText: undefined,
     pendingMessages: [],

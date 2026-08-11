@@ -70,6 +70,7 @@ export const appReducer = (state: AppState, action: AppAction): AppState => {
           pendingMessages: [],
           editSnapshot: undefined,
           recoveredAttachments: undefined,
+          recoveredMode: undefined,
         },
         ui: {
           ...state.ui,
@@ -302,6 +303,7 @@ export const appReducer = (state: AppState, action: AppAction): AppState => {
           error: null,
           status: 'idle',
           recoveredInput: undefined, recoveredAttachments: undefined,
+          recoveredMode: undefined,
         },
         ui: {
           ...state.ui,
@@ -319,6 +321,7 @@ export const appReducer = (state: AppState, action: AppAction): AppState => {
           error: null,
           streamingMessageId: undefined,
           recoveredInput: undefined, recoveredAttachments: undefined,
+          recoveredMode: undefined,
           pendingMessages: [],
         },
         ui: {
@@ -368,6 +371,7 @@ export const appReducer = (state: AppState, action: AppAction): AppState => {
           messages: recoveredMessages,
           streamingMessageId: undefined,
           recoveredInput: action.messageText,
+          recoveredMode: action.mode,
           error: {
             ...action.error,
             message: `Failed to get a response after ${action.retryCount} ${action.retryCount === 1 ? 'attempt' : 'attempts'}. Your message has been restored.`,
@@ -387,6 +391,7 @@ export const appReducer = (state: AppState, action: AppAction): AppState => {
         chat: {
           ...state.chat,
           recoveredInput: undefined, recoveredAttachments: undefined,
+          recoveredMode: undefined,
         },
       };
 
@@ -396,7 +401,7 @@ export const appReducer = (state: AppState, action: AppAction): AppState => {
         ...state,
         chat: {
           ...state.chat,
-          pendingMessages: [...state.chat.pendingMessages, { text: action.text, files: action.files }],
+          pendingMessages: [...state.chat.pendingMessages, { text: action.text, files: action.files, mode: action.mode }],
         },
       };
 
