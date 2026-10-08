@@ -1,0 +1,166 @@
+kind: workflow
+trigger:
+  kind: OnConversationStart
+  id: trigger_wf
+  actions:
+    - kind: SetMultipleVariables
+      id: SetVarUserMessage
+      assignments:
+        - variable: Local.UserMessage
+          value: =UserMessage(System.LastMessage.Text)
+        - variable: Local.QuestionText
+          value: =System.LastMessage.Text
+    - kind: InvokeAzureAgent
+      id: router_agent
+      agent:
+        name: Router
+      conversationId: =System.ConversationId
+      input:
+        messages: =Local.UserMessage
+      output:
+        autoSend: false
+        responseObject: Local.OrchestratorResponse
+    - kind: SetVariable
+      id: SetRouterVar
+      variable: Local.Route
+      value: =Local.OrchestratorResponse.route
+    - kind: ConditionGroup
+      conditions:
+        - condition: =Local.Route = "apple"
+          actions:
+            - kind: InvokeAzureAgent
+              id: apple_agent
+              agent:
+                name: protect-prevent
+              conversationId: =System.ConversationId
+              input:
+                messages: =Local.UserMessage
+              output:
+                autoSend: false
+                responseObject: Local.AppleResponse
+            - kind: SetMultipleVariables
+              id: SetAppleVars
+              assignments:
+                - variable: Local.Status
+                  value: =Text(Local.AppleResponse.status)
+                - variable: Local.DiagnosisName
+                  value: =Text(Local.AppleResponse.diagnosis_name)
+                - variable: Local.FilRecommendation
+                  value: =Text(Local.AppleResponse.answer.fil_recommendation)
+                - variable: Local.DisplayMessage
+                  value: =Text(Local.AppleResponse.display_message)
+            - kind: ConditionGroup
+              id: apple_retry_check
+              conditions:
+                - condition: =IsBlank(Local.DisplayMessage)
+                  id: apple_retry_if_empty
+                  actions:
+                    - kind: InvokeAzureAgent
+                      id: apple_agent_retry
+                      agent:
+                        name: protect-prevent
+                      conversationId: =System.ConversationId
+                      input:
+                        messages: =Local.UserMessage
+                      output:
+                        autoSend: false
+                        responseObject: Local.AppleResponse
+                    - kind: SetMultipleVariables
+                      id: SetAppleVarsRetry
+                      assignments:
+                        - variable: Local.Status
+                          value: =Text(Local.AppleResponse.status)
+                        - variable: Local.DiagnosisName
+                          value: =Text(Local.AppleResponse.diagnosis_name)
+                        - variable: Local.FilRecommendation
+                          value: =Text(Local.AppleResponse.answer.fil_recommendation)
+                        - variable: Local.DisplayMessage
+                          value: =Text(Local.AppleResponse.display_message)
+          id: if-node-1785240280979-90yt3fiq
+      id: node-1785240280979
+      elseActions:
+        - kind: InvokeAzureAgent
+          id: kcc_agent
+          agent:
+            name: kcc-agent
+          conversationId: =System.ConversationId
+          input:
+            messages: =Local.UserMessage
+          output:
+            autoSend: false
+            responseObject: Local.KccResponse
+        - kind: SetMultipleVariables
+          id: SetKccVars
+          assignments:
+            - variable: Local.Status
+              value: =Text(Local.KccResponse.status)
+            - variable: Local.DiagnosisName
+              value: =Text(Local.KccResponse.diagnosis_name)
+            - variable: Local.FilRecommendation
+              value: =Text(Local.KccResponse.answer.fil_recommendation)
+            - variable: Local.DisplayMessage
+              value: =Text(Local.KccResponse.display_message)
+        - kind: ConditionGroup
+          id: kcc_retry_check
+          conditions:
+            - condition: =IsBlank(Local.DisplayMessage)
+              id: kcc_retry_if_empty
+              actions:
+                - kind: InvokeAzureAgent
+                  id: kcc_agent_retry
+                  agent:
+                    name: kcc-agent
+                  conversationId: =System.ConversationId
+                  input:
+                    messages: =Local.UserMessage
+                  output:
+                    autoSend: false
+                    responseObject: Local.KccResponse
+                - kind: SetMultipleVariables
+                  id: SetKccVarsRetry
+                  assignments:
+                    - variable: Local.Status
+                      value: =Text(Local.KccResponse.status)
+                    - variable: Local.DiagnosisName
+                      value: =Text(Local.KccResponse.diagnosis_name)
+                    - variable: Local.FilRecommendation
+                      value: =Text(Local.KccResponse.answer.fil_recommendation)
+                    - variable: Local.DisplayMessage
+                      value: =Text(Local.KccResponse.display_message)
+    - kind: ConditionGroup
+      conditions:
+        - condition: =Local.Status = "DIAGNOSED"
+          actions:
+            - kind: InvokeAzureAgent
+              id: product_agent
+              agent:
+                name: product-recommendation-agent
+              conversationId: =System.ConversationId
+              input:
+                messages: =UserMessage(Local.DiagnosisName & " " & Local.FilRecommendation)
+              output:
+                autoSend: false
+                responseObject: Local.ProductResponse
+            - kind: SetVariable
+              id: node-output
+              variable: Local.FinalMessage
+              value: =Local.DisplayMessage & If(IsBlank(Local.ProductResponse) || !Local.ProductResponse.has_recommendation, "", Char(10) & Char(10) & Text(Local.ProductResponse.products_text))
+            - kind: SendActivity
+              id: send_final
+              activity: "{Local.FinalMessage}"
+            - kind: EndConversation
+              id: node-1785242091084
+          id: if-node-1785240968917-rvy9k4k9
+      id: node-1785240968917
+      elseActions:
+        - kind: SetVariable
+          id: node-clarification
+          variable: Local.FinalMessage
+          value: =If(IsBlank(Local.DisplayMessage), "Sorry, I could not get an answer this time. Please try asking your question again.", Local.DisplayMessage)
+        - kind: SendActivity
+          id: send_clarification
+          activity: "{Local.FinalMessage}"
+        - kind: EndConversation
+          id: node-1785242096628
+id: ""
+name: Kisan-Orchestrator

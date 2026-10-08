@@ -1,0 +1,84 @@
+kind: workflow
+trigger:
+  kind: OnConversationStart
+  id: trigger_wf
+  actions:
+    - kind: SetMultipleVariables
+      id: SetVarUserMessage
+      assignments:
+        - variable: Local.UserMessage
+          value: =UserMessage(System.LastMessage.Text)
+        - variable: Local.QuestionText
+          value: =System.LastMessage.Text
+    - kind: InvokeAzureAgent
+      id: router_agent
+      agent:
+        name: Router
+      conversationId: =System.ConversationId
+      input:
+        messages: =Local.UserMessage
+      output:
+        autoSend: true
+        responseObject: Local.OrchestratorResponse
+    - kind: SetVariable
+      id: SetRouterVar
+      variable: Local.Route
+      value: =Local.OrchestratorResponse.route
+    - kind: ConditionGroup
+      conditions:
+        - condition: =Local.Route = "apple"
+          actions:
+            - kind: InvokeAzureAgent
+              id: apple_agent
+              agent:
+                name: protect-prevent
+              conversationId: =System.ConversationId
+              input:
+                messages: =Local.UserMessage
+              output:
+                autoSend: true
+                responseObject: Local.SpecialistResponse
+          id: if-node-1785240280979-90yt3fiq
+      id: node-1785240280979
+      elseActions:
+        - kind: InvokeAzureAgent
+          id: kcc_agent
+          agent:
+            name: kcc-agent
+          conversationId: =System.ConversationId
+          input:
+            messages: =Local.UserMessage
+          output:
+            autoSend: true
+            responseObject: Local.SpecialistResponse
+    - kind: ConditionGroup
+      conditions:
+        - condition: =Local.SpecialistResponse.status = "DIAGNOSED"
+          actions:
+            - kind: InvokeAzureAgent
+              id: product_agent
+              agent:
+                name: product-recommendation-agent
+              conversationId: =System.ConversationId
+              input:
+                messages: =If(     !IsBlank(Local.SpecialistResponse.diagnosis_name) || !IsBlank(Local.SpecialistResponse.answer.fil_recommendation),     UserMessage(Text(Local.SpecialistResponse.diagnosis_name) & " " & Text(Local.SpecialistResponse.answer.fil_recommendation)),     Blank() )
+              output:
+                autoSend: true
+                responseObject: Local.ProductResponse
+            - kind: SetVariable
+              id: node-output
+              variable: Local.FinalMessage
+              value: =Text(Local.SpecialistResponse.display_message) & If(IsBlank(Local.ProductResponse), "", Char(10) & Char(10) & Text(Local.ProductResponse.products_text))
+            - kind: EndConversation
+              id: node-1785242091084
+          id: if-node-1785240968917-rvy9k4k9
+      id: node-1785240968917
+      elseActions:
+        - kind: SetVariable
+          id: node-clarification
+          variable: Local.FinalMessage
+          value: =Local.SpecialistResponse.display_message
+        - kind: EndConversation
+          id: node-1785242096628
+id: ""
+name: Kisan-Orchestrator

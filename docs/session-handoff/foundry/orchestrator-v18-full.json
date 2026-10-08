@@ -1,0 +1,86 @@
+{
+  "object": "agent",
+  "id": "Kisan-Orchestrator",
+  "name": "Kisan-Orchestrator",
+  "state": "enabled",
+  "versions": {
+    "latest": {
+      "metadata": {
+        "description": "",
+        "modified_at": "1791274658",
+        "microsoft.voice-live.enabled": "false",
+        "microsoft.voice-live.configuration": "{\"session\":{\"voice\":{\"name\":\"en-US-Ava:DragonHDLatestNeural\",\"type\":\"azure-standard\",\"temperature\":0.8,\"rate\":\"1\",\"isHdVoice\":true},\"inputAudioTranscription\":{\"model\":\"azure-speech\",\"language\":\"auto-detect\"},\"turnDetection\":{\"type\":\"azure_semantic_vad\",\"endOfUtteranceDetection\":null,\"removeFillerWords\":true},\"inputAudioNoiseReduction\":null,\"inputAudioEchoCancellation\":null,\"fillerResponse\":null,\"avatar\":null,\"proactiveEngagement\":true}}"
+      },
+      "object": "agent.version",
+      "id": "Kisan-Orchestrator:18",
+      "name": "Kisan-Orchestrator",
+      "version": "18",
+      "description": "",
+      "created_at": 1791274658,
+      "definition": {
+        "kind": "workflow",
+        "id": "",
+        "name": "Kisan-Orchestrator",
+        "model": "gpt-4.1",
+        "tools": [],
+        "workflow": "kind: workflow\ntrigger:\n  kind: OnConversationStart\n  id: trigger_wf\n  actions:\n    - kind: SetMultipleVariables\n      id: SetVarUserMessage\n      assignments:\n        - variable: Local.UserMessage\n          value: =UserMessage(System.LastMessage.Text)\n        - variable: Local.QuestionText\n          value: =System.LastMessage.Text\n    - kind: InvokeAzureAgent\n      id: router_agent\n      agent:\n        name: Router\n      conversationId: =System.ConversationId\n      input:\n        messages: =Local.UserMessage\n      output:\n        autoSend: true\n        responseObject: Local.OrchestratorResponse\n    - kind: SetVariable\n      id: SetRouterVar\n      variable: Local.Route\n      value: =Local.OrchestratorResponse.route\n    - kind: ConditionGroup\n      conditions:\n        - condition: =Local.Route = \"apple\"\n          actions:\n            - kind: InvokeAzureAgent\n              id: apple_agent\n              agent:\n                name: protect-prevent\n              conversationId: =System.ConversationId\n              input:\n                messages: =Local.UserMessage\n              output:\n                autoSend: true\n                responseObject: Local.SpecialistResponse\n          id: if-node-1785240280979-90yt3fiq\n      id: node-1785240280979\n      elseActions:\n        - kind: InvokeAzureAgent\n          id: kcc_agent\n          agent:\n            name: kcc-agent\n          conversationId: =System.ConversationId\n          input:\n            messages: =Local.UserMessage\n          output:\n            autoSend: true\n            responseObject: Local.SpecialistResponse\n    - kind: ConditionGroup\n      conditions:\n        - condition: =Local.SpecialistResponse.status = \"DIAGNOSED\"\n          actions:\n            - kind: InvokeAzureAgent\n              id: product_agent\n              agent:\n                name: product-recommendation-agent\n              conversationId: =System.ConversationId\n              input:\n                messages: =If(     !IsBlank(Local.SpecialistResponse.diagnosis_name) || !IsBlank(Local.SpecialistResponse.answer.fil_recommendation),     UserMessage(Text(Local.SpecialistResponse.diagnosis_name) & \" \" & Text(Local.SpecialistResponse.answer.fil_recommendation)),     Blank() )\n              output:\n                autoSend: true\n                responseObject: Local.ProductResponse\n            - kind: SetVariable\n              id: node-output\n              variable: Local.FinalMessage\n              value: =Text(Local.SpecialistResponse.display_message) & If(IsBlank(Local.ProductResponse), \"\", Char(10) & Char(10) & Text(Local.ProductResponse.products_text))\n            - kind: EndConversation\n              id: node-1785242091084\n          id: if-node-1785240968917-rvy9k4k9\n      id: node-1785240968917\n      elseActions:\n        - kind: SetVariable\n          id: node-clarification\n          variable: Local.FinalMessage\n          value: =Local.SpecialistResponse.display_message\n        - kind: EndConversation\n          id: node-1785242096628\nid: \"\"\nname: Kisan-Orchestrator\n"
+      },
+      "draft": false,
+      "status": "active",
+      "instance_identity": {
+        "principal_id": "0246d78e-f3ad-41b3-a98a-0392b4e56f81",
+        "client_id": "0246d78e-f3ad-41b3-a98a-0392b4e56f81"
+      },
+      "blueprint": {
+        "principal_id": "7d01e412-e571-4158-bded-ce52a74ffcc3",
+        "client_id": "a4491ede-d41d-4e6d-9251-d32512f92f35"
+      },
+      "blueprint_reference": {
+        "type": "ManagedAgentIdentityBlueprint",
+        "blueprint_id": "Kisan-Orchestrator-977a7"
+      },
+      "agent_guid": "977a7d54-fe19-416d-8448-8e5c19091546"
+    }
+  },
+  "agent_endpoint": {
+    "version_selector": {
+      "version_selection_rules": [
+        {
+          "type": "FixedRatio",
+          "agent_version": "@latest",
+          "traffic_percentage": 100
+        }
+      ]
+    },
+    "protocols": [
+      "activity",
+      "responses"
+    ],
+    "protocol_configuration": {
+      "activity": {},
+      "responses": {}
+    },
+    "authorization_schemes": [
+      {
+        "type": "Entra"
+      },
+      {
+        "type": "BotServiceTenant"
+      }
+    ],
+    "publish_approval_status": "pending"
+  },
+  "instance_identity": {
+    "principal_id": "0246d78e-f3ad-41b3-a98a-0392b4e56f81",
+    "client_id": "0246d78e-f3ad-41b3-a98a-0392b4e56f81"
+  },
+  "blueprint": {
+    "principal_id": "7d01e412-e571-4158-bded-ce52a74ffcc3",
+    "client_id": "a4491ede-d41d-4e6d-9251-d32512f92f35"
+  },
+  "blueprint_reference": {
+    "type": "ManagedAgentIdentityBlueprint",
+    "blueprint_id": "Kisan-Orchestrator-977a7"
+  },
+  "configuration_state": "enabled"
+}

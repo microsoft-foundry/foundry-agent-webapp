@@ -1,0 +1,3 @@
+# Output written by the test scripts in scripts/
+scripts/*.txt
+scripts/body*.json

@@ -7,7 +7,9 @@ using OpenAI.Files;
 using OpenAI.Responses;
 using Microsoft.Identity.Client;
 using Microsoft.Identity.Web;
+using System.ClientModel.Primitives;
 using System.Runtime.CompilerServices;
+using System.Text.Json;
 using WebApp.Api.Models;
 
 namespace WebApp.Api.Services;
@@ -329,6 +331,11 @@ public class AgentFrameworkService : IDisposable
         var resolvedAgent = await GetAgentAsync(cancellationToken);
         var resolvedVersion = _configuredAgentVersion ?? resolvedAgent.Version;
 
+        // Workflows stream every inner agent's output (even with autoSend: false), so only
+        // messages sent by the workflow itself (e.g. a SendActivity node) reach the user.
+        bool isWorkflow = IsWorkflow(resolvedAgent);
+        var hiddenMessageIds = new HashSet<string>();
+
         // Always bind to conversation — the conversation maintains MCP approval state
         ProjectResponsesClient responsesClient
             = GetProjectClient().ProjectOpenAIClient.GetProjectResponsesClientForAgent(
@@ -382,6 +389,9 @@ public class AgentFrameworkService : IDisposable
 
             if (update is StreamingResponseOutputTextDeltaUpdate deltaUpdate)
             {
+                if (hiddenMessageIds.Contains(deltaUpdate.ItemId))
+                    continue;
+
                 yield return StreamChunk.Text(deltaUpdate.Delta);
             }
             else if (update is StreamingResponseOutputItemDoneUpdate itemDoneUpdate)
@@ -426,6 +436,10 @@ public class AgentFrameworkService : IDisposable
                     continue;
                 }
                 
+                // Citations from a hidden inner-agent message point at text the user never sees
+                if (hiddenMessageIds.Contains(itemDoneUpdate.Item.Id))
+                    continue;
+
                 // Extract annotations/citations from completed output items
                 var annotations = ExtractAnnotations(itemDoneUpdate.Item, fileSearchQuotes);
                 if (annotations.Count > 0)
@@ -436,6 +450,17 @@ public class AgentFrameworkService : IDisposable
             }
             else if (update is StreamingResponseOutputItemAddedUpdate itemAddedUpdate)
             {
+                if (isWorkflow && itemAddedUpdate.Item is MessageResponseItem innerMessage)
+                {
+                    var producer = GetProducingAgentName(innerMessage);
+                    if (producer != null && producer != _agentId)
+                    {
+                        _logger.LogDebug("Hiding inner workflow message from agent {Agent}", producer);
+                        hiddenMessageIds.Add(innerMessage.Id);
+                    }
+                    continue;
+                }
+
                 // Detect tool-use steps and signal the frontend for progress indicators
                 string? toolName = itemAddedUpdate.Item switch
                 {
@@ -900,7 +925,10 @@ public class AgentFrameworkService : IDisposable
         {
             _logger.LogInformation("Getting messages for conversation: {ConversationId}", conversationId);
 
-            var messages = new List<ConversationMessageInfo>();
+            var resolvedAgent = await GetAgentAsync(cancellationToken);
+            bool isWorkflow = IsWorkflow(resolvedAgent);
+
+            var messages = new List<(ConversationMessageInfo Message, string? ProducingAgent)>();
 
             // Filter to message items only
             await foreach (var item in GetProjectClient().ProjectOpenAIClient.GetProjectConversationsClient().GetProjectConversationItemsAsync(
@@ -913,23 +941,97 @@ public class AgentFrameworkService : IDisposable
                         .Where(c => c.Text != null)
                         .Select(c => c.Text));
 
-                    messages.Add(new ConversationMessageInfo
+                    messages.Add((new ConversationMessageInfo
                     {
                         Role = messageItem.Role.ToString().ToLowerInvariant(),
                         Content = content
-                    });
+                    }, isWorkflow ? GetProducingAgentName(item) : null));
                 }
             }
 
             _logger.LogInformation("Found {Count} messages in conversation {ConversationId}", messages.Count, conversationId);
             messages.Reverse();
-            return messages;
+            return isWorkflow
+                ? FilterWorkflowHistory(messages, _agentId)
+                : messages.Select(m => m.Message).ToList();
         }
         catch (Exception ex)
         {
             _logger.LogError(ex, "Failed to get messages for conversation: {ConversationId}", conversationId);
             throw;
         }
+    }
+
+#pragma warning disable AAIP001 // WorkflowAgentDefinition is preview in Azure.AI.Projects
+    private static bool IsWorkflow(ProjectsAgentVersion agent) => agent.Definition is WorkflowAgentDefinition;
+#pragma warning restore AAIP001
+
+    /// <summary>
+    /// Name of the agent that produced an item, or null if untagged. Streamed items carry
+    /// <c>agent_reference.name</c>; stored conversation items carry <c>created_by.agent.name</c>.
+    /// Neither is exposed on the SDK models, so this reads the item's serialized JSON.
+    /// </summary>
+    public static string? GetProducingAgentName(object item)
+    {
+        using var doc = JsonDocument.Parse(ModelReaderWriter.Write(item, ModelReaderWriterOptions.Json));
+        var root = doc.RootElement;
+
+        if (TryGetName(root, "agent_reference", out var name))
+            return name;
+
+        return root.TryGetProperty("created_by", out var createdBy) && TryGetName(createdBy, "agent", out name)
+            ? name
+            : null;
+
+        static bool TryGetName(JsonElement parent, string property, out string? name)
+        {
+            name = null;
+            if (parent.ValueKind == JsonValueKind.Object
+                && parent.TryGetProperty(property, out var child)
+                && child.ValueKind == JsonValueKind.Object
+                && child.TryGetProperty("name", out var nameElement)
+                && nameElement.ValueKind == JsonValueKind.String)
+            {
+                name = nameElement.GetString();
+            }
+            return name != null;
+        }
+    }
+
+    /// <summary>
+    /// Reduces a workflow conversation (oldest first) to what the user saw: the workflow's own
+    /// replies, plus the first user message of each turn. Workflows store inner agents' replies
+    /// and the user messages they feed those agents in the same conversation.
+    /// </summary>
+    /// <remarks>
+    /// Inner user messages are untagged, so a turn is detected positionally. If a turn fails
+    /// before the workflow replies, the next turn's question is treated as inner and dropped.
+    /// </remarks>
+    public static List<ConversationMessageInfo> FilterWorkflowHistory(
+        IEnumerable<(ConversationMessageInfo Message, string? ProducingAgent)> messages,
+        string workflowName)
+    {
+        var result = new List<ConversationMessageInfo>();
+        bool awaitingReply = false;
+
+        foreach (var (message, producingAgent) in messages)
+        {
+            if (message.Role == "user")
+            {
+                if (!awaitingReply)
+                {
+                    result.Add(message);
+                    awaitingReply = true;
+                }
+            }
+            else if (producingAgent == workflowName)
+            {
+                result.Add(message);
+                awaitingReply = false;
+            }
+        }
+
+        return result;
     }
 
     /// <summary>

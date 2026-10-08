@@ -175,6 +175,15 @@ sequenceDiagram
 | `done` | Last, always | `{}` |
 | `error` | On exception | `{message: string}` |
 
+### 1.6 Workflow Agents
+
+When `AI_AGENT_ID` names a workflow (`WorkflowAgentDefinition`), Foundry streams and stores every inner agent's messages in the same response and conversation, regardless of each node's `autoSend` setting. The backend identifies the producer of each message (`agent_reference.name` when streamed, `created_by.agent.name` when stored) and:
+
+- **Streaming** — drops `chunk` and `annotations` events for messages not produced by the workflow itself. `toolUse` events from inner agents still pass through.
+- **History** — keeps the workflow's own replies plus the first user message of each turn. The inner user messages the workflow sends to its agents are untagged, so turns are detected by position.
+
+The workflow must therefore send its user-facing answer itself (e.g. a `SendActivity` node). Otherwise the user sees nothing.
+
 ---
 
 ## Part 2: Frontend State
